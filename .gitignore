@@ -1,0 +1,8 @@
+scripts/node_modules/
+scripts/*-report.json
+scripts/last-*.json
+scripts/tools/
+*.png
+*.mp4
+*.log
+.DS_Store

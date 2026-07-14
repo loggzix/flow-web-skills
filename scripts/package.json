@@ -1,0 +1,9 @@
+{
+  "name": "xuong-phim-ai-flow-runner",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CDP runner scripts for Google Flow (Veo) video generation. Connects to Chrome on CDP port 9666.",
+  "dependencies": {
+    "playwright-core": "^1.48.0"
+  }
+}
