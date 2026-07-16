@@ -4,6 +4,7 @@
 // mapPath: ghi/merge JSON {workflowId: {title, status}} — workflowId == editId tren grid → map clip↔prompt↔canh.
 // nogrid: bo qua man dem grid (cuon-gom ~20-30s voi project lon) — dung khi poll trong vong lap (flow-job).
 const pw = require('playwright-core');
+const lib = require('./flow-lib');
 const fs = require('fs');
 
 const [, , projectId, secsArg, mapPath, gridArg] = process.argv;
@@ -13,7 +14,7 @@ const NO_POLL_GIVEUP = 15000; // trang poll ~10s/lan khi dang render → duoi 15
 const IDLE_AFTER_POLL = 7000;
 
 (async () => {
-  const browser = await pw.chromium.connectOverCDP('http://127.0.0.1:9666');
+  const browser = await pw.chromium.connectOverCDP(lib.CDP);
   const ctx = browser.contexts()[0];
   let page = projectId ? ctx.pages().find(p => p.url().includes(`/project/${projectId}`)) : null;
   if (!page) page = ctx.pages().find(p => p.url().includes('labs.google/fx'));

@@ -1,7 +1,7 @@
 // flow-lib.js — phan dung chung cho flow-fire.js / flow-fire-char.js (CDP 9666).
 const pw = require('playwright-core');
 
-const CDP = 'http://127.0.0.1:9666';
+const CDP = process.env.FLOW_CDP || 'http://127.0.0.1:9666';
 
 async function connect(project) {
   const browser = await pw.chromium.connectOverCDP(CDP);
@@ -173,4 +173,41 @@ async function fireScene(page, editor, prompt, fired, waitMs) {
   return { ok, seconds: +((Date.now() - t0) / 1000).toFixed(1), last: ok ? fired[fired.length - 1] : null };
 }
 
-module.exports = { connect, gotoProject, checkConfig, trackFires, trackBirths, waitBirths, assignBirths, fireScene };
+module.exports = { CDP, connect, gotoProject, checkConfig, trackFires, trackBirths, waitBirths, assignBirths, fireScene, pollUntil, clickByLocator };
+
+// Generic poll helper — reused by fire-char, fire-frame, etc.
+async function pollUntil(page, fn, timeoutMs, stepMs) {
+  const deadline = Date.now() + timeoutMs;
+  let v;
+  while (Date.now() < deadline) {
+    v = await fn();
+    if (v) return v;
+    await page.waitForTimeout(stepMs || 200);
+  }
+  return v;
+}
+
+// Click element by text using TRUSTED Playwright locator (not coord-based mouse.click).
+// scope: 'dialog' = within [role="dialog"], 'page' = whole document.
+// Returns true if clicked, false if not found.
+async function clickByLocator(page, scope, needle) {
+  const root = scope === 'dialog' ? page.locator('[role="dialog"]') : page;
+  // Try exact text match first, then partial
+  const candidates = [
+    root.getByRole('button', { name: needle }),
+    root.getByRole('tab', { name: needle }),
+    root.getByRole('option', { name: needle }),
+    root.getByRole('menuitem', { name: needle }),
+    root.locator(`text="${needle}"`),
+  ];
+  for (const loc of candidates) {
+    if (await loc.first().count()) {
+      try {
+        await loc.first().scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {});
+        await loc.first().click({ timeout: 5000 });
+        return true;
+      } catch (_) { continue; }
+    }
+  }
+  return false;
+}

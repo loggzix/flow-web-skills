@@ -4,23 +4,27 @@
 // Usage: node flow-job.js <scenes.json> <outDir> [report.json]
 // scenes.json: nhu flow-fire (text) hoac flow-fire-char (co "character" + "promptTemplate").
 // Exit: 0 = du clip + dat ten xong; 1 = loi/thieu; 2 = khong co page; 3 = config lech.
-const { spawnSync } = require('child_process');
+const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
 const [, , scenesPath, outDir, reportPath] = process.argv;
 if (!scenesPath || !outDir) { console.error('USAGE: node flow-job.js <scenes.json> <outDir> [report.json]'); process.exit(1); }
-const spec = JSON.parse(fs.readFileSync(scenesPath, 'utf8'));
+const spec = JSON.parse(fs.readFileSync(scenesPath, 'utf8').replace(/^\uFEFF/, ''));
 const isChar = !!spec.character;
 const REPORT = reportPath || 'tools/last-job-report.json';
 const MAP = path.join(outDir, 'media-map.json');
 const MAX_WAIT = 15 * 60 * 1000;
 
 function run(tool, args, quiet) {
-  const r = spawnSync('node', [path.join(__dirname, tool), ...args], { encoding: 'utf8', timeout: 10 * 60 * 1000 });
-  if (!quiet) process.stdout.write(r.stdout || '');
-  process.stderr.write(r.stderr || '');
-  return { code: r.status, out: (r.stdout || '') + (r.stderr || '') };
+  return new Promise((resolve) => {
+    const child = spawn('node', [path.join(__dirname, tool), ...args], { encoding: 'utf8', timeout: 10 * 60 * 1000 });
+    let stdout = '', stderr = '';
+    child.stdout.on('data', d => { stdout += d; if (!quiet) process.stdout.write(d); });
+    child.stderr.on('data', d => { stderr += d; process.stderr.write(d); });
+    child.on('close', code => resolve({ code, out: stdout + stderr }));
+    child.on('error', e => resolve({ code: 1, out: e.message }));
+  });
 }
 
 const norm = s => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -51,7 +55,7 @@ function matchScene(title) {
 
   const fireTool = isChar ? 'flow-fire-char.js' : 'flow-fire.js';
   const fireReport = path.join(outDir, 'fire-report.json');
-  const f = run(fireTool, [scenesPath, fireReport]);
+  const f = await run(fireTool, [scenesPath, fireReport]);
   if (f.code === 3) { console.log('JOB_ABORT: config lech'); process.exit(3); }
   if (f.code === 2) { console.log('JOB_ABORT: khong co page'); process.exit(2); }
   let fireData = null;
@@ -79,8 +83,10 @@ function matchScene(title) {
   let deadline = t0 + MAX_WAIT, lastFireAt = Date.now();
   let rounds = 0, succ = 0, refires = 0, done = false;
   while (Date.now() < deadline) {
-    // quiet: log nen chi can 1 dong POLL_ROUND/vong, khoi in nguyen stdout flow-status.
-    const s = run('flow-status.js', [spec.project, '30', MAP, 'nogrid'], true);
+    // Adaptive poll interval: 15s first 2min, 30s up to 5min, 45s after (less CDP churn when waiting long renders).
+    const elapsed = Date.now() - t0;
+    const pollWait = elapsed < 120000 ? '15' : elapsed < 300000 ? '30' : '45';
+    const s = await run('flow-status.js', [spec.project, pollWait, MAP, 'nogrid'], true);
     rounds++;
     let map = {};
     try { map = JSON.parse(fs.readFileSync(MAP, 'utf8')); } catch (_) {}
@@ -117,7 +123,7 @@ function matchScene(title) {
       const subPath = path.join(outDir, 'refire-scenes.json');
       fs.writeFileSync(subPath, JSON.stringify({ ...spec, scenes: short }, null, 2));
       const rfReport = path.join(outDir, 'refire-report.json');
-      const rf = run(fireTool, [subPath, rfReport], true);
+      const rf = await run(fireTool, [subPath, rfReport], true);
       let rfData = null;
       try { rfData = JSON.parse(fs.readFileSync(rfReport, 'utf8')); } catch (_) {}
       if (rf.code >= 2 || !rfData || !rfData.totalFired) { console.log('REFIRE_FAIL: khong ban lai duoc — dung poll.'); break; }
@@ -131,7 +137,7 @@ function matchScene(title) {
   const wanted = Object.keys(sceneByWf);
   const dlArgs = [spec.project, outDir, String(Math.max(expected, wanted.length))];
   if (wanted.length) { fs.writeFileSync(idsPath, JSON.stringify(wanted, null, 1)); dlArgs.push(idsPath); }
-  const d = run('flow-download.js', dlArgs);
+  const d = await run('flow-download.js', dlArgs);
   if (d.code !== 0 && !fs.existsSync(path.join(outDir, 'manifest.json'))) {
     console.log('JOB_ABORT: download fail');
     process.exit(1);

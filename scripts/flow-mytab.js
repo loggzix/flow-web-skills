@@ -1,8 +1,8 @@
 const pw = require('playwright-core');
 const fs = require('fs');
 
-const CHAR_URL = 'https://labs.google/fx/vi/tools/flow/project/4660f586-d329-48dc-8a1a-3e44234fe0d1/character/1a311aaa-87cc-4d2c-92b8-11aaadb27454';
-const MARK = 'character/1a311aaa';
+const CHAR_URL = process.env.FLOW_CHAR_URL || 'https://labs.google/fx/vi/tools/flow/project/4660f586-d329-48dc-8a1a-3e44234fe0d1/character/1a311aaa-87cc-4d2c-92b8-11aaadb27454';
+const MARK = CHAR_URL.includes('/character/') ? 'character/' + CHAR_URL.split('/character/')[1].slice(0, 8) : 'character/';
 
 async function getPage(ctx) {
   let page = ctx.pages().find(p => p.url().includes(MARK));
@@ -25,18 +25,10 @@ async function dump(page) {
   });
 }
 
+const lib = require('./flow-lib');
+
 async function clickByText(page, name) {
-  const pt = await page.evaluate((n) => {
-    const els = [...document.querySelectorAll('button, [role="button"], [role="option"], [role="menuitem"]')];
-    const b = els.find(e => ((e.innerText || e.getAttribute('aria-label') || '')).includes(n));
-    if (!b) return null;
-    b.scrollIntoView({ block: 'center' });
-    const r = b.getBoundingClientRect();
-    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-  }, name);
-  if (!pt) return false;
-  await page.mouse.click(pt.x, pt.y);
-  return true;
+  return lib.clickByLocator(page, 'page', name);
 }
 
 module.exports = { getPage, dump, clickByText, CHAR_URL };
@@ -44,7 +36,7 @@ module.exports = { getPage, dump, clickByText, CHAR_URL };
 if (require.main === module) {
   const [, , action, arg1, arg2] = process.argv;
   (async () => {
-    const browser = await pw.chromium.connectOverCDP('http://127.0.0.1:9666');
+    const browser = await pw.chromium.connectOverCDP(lib.CDP);
     const ctx = browser.contexts()[0];
     const page = await getPage(ctx);
     console.log('PAGE', page.url());

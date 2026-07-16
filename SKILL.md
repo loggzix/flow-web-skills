@@ -1,14 +1,15 @@
 ---
 name: xuong-phim-ai-flow-video
-description: "Use when Long asks to làm/gen video, job xưởng phim, làm clip cho khách, or gives a Jobs/<Tên> path — end-to-end Google Flow (Veo) video generation via bundled CDP runner scripts, prompt recipe, and ad-writing patterns."
+description: "Use when Long asks to làm/gen video, gen clip, render video, job xưởng phim, làm clip cho khách, or gives a Jobs/<Tên> path — end-to-end Google Flow (Veo) video generation via bundled CDP runner scripts, prompt recipe, and ad-writing patterns."
 version: 1.0.0
 author: Long (loggzix)
 license: MIT
 platforms: [windows]
+category: creative
 metadata:
   hermes:
     tags: [video, google-flow, veo, cdp, playwright, content-creation]
-    related_skills: []
+    related_skills: [darwin-skill, ascii-video, youtube-content]
 ---
 
 # Skill: Xưởng Phim AI — Làm video bằng Google Flow (Veo)
@@ -18,6 +19,49 @@ metadata:
 **NGUYÊN TẮC TỐI THƯỢNG:** Làm theo TÀI LIỆU GỐC của job, KHÔNG làm theo trí nhớ. Tốc độ KHÔNG được đánh đổi bằng việc bỏ cấu trúc prompt. Skill này tự chứa đủ recipe — không cần tra MEMORY.md.
 
 **⚡ CÓ BỘ RUNNER .JS (Phần G):** thao tác lặp (set config, fire nhiều cảnh, đếm trạng thái, tải hàng loạt) đã có script node chạy thẳng qua CDP — 0 token/bước, nhanh hơn MCP nhiều lần. Ưu tiên runner; việc chưa có runner (gắn frame/ingredient, tạo nhân vật, xử lý ảnh) → MCP hoặc script one-off theo mẫu job Kệ v4 (Phần G).
+
+---
+
+## 📋 TL;DR — TRA NHANH (đọc chi tiết ở phần tương ứng)
+
+### 🔍 Keyword Index (Ctrl+F → tìm section)
+`fire` →§B4,§G · `config` →§B1,BƯỚC5 · `chip` →§B1,§G · `dialog` `picker` →§B2 · `ingredient` `frame` →§G · `nhân vật` `character` →§C · `prompt` →BƯỚC3,§H · `scenes.json` →§G · `download` `manifest` →§D,§G · `workflowId` →§G · `throttle` →§G · `403` `reCAPTCHA` →§B4 · `ffmpeg` `concat` →§D · `agy` `vision` `QC` →§F · `template` `quảng cáo` →§H5 · `checkpoint` `tín dụng` →§B1,BƯỚC6 · `mixed` →§G,TL;DR
+
+### Quy trình job chuẩn
+`BƯỚC 0` Đọc tài liệu gốc → `1` Xử lý ảnh khách → `2` Tạo nhân vật (nếu có MC) → `3` Prompt (DÁN NGUYÊN VĂN, format tiền tố) → `4` Logo/chữ → `5` Config Flow → `6` Fire + verify + tải → `7` Bàn giao
+
+### Runner nhanh (text-to-video thuần)
+```
+node flow-config.js <projectId>          # set config, verify CHIP_AFTER
+node flow-job.js <scenes.json> <outDir>  # fire → poll → download trọn job
+```
+
+### Cây quyết định nhanh
+| Tình huống | Hành động |
+|---|---|
+| Text-to-video thuần | `flow-job.js` (tự fire + poll + download) |
+| Có frame/ingredient | `flow-fire-frame.js` (Khung hình) hoặc MCP |
+| Có nhân vật (MC) | `flow-fire-char.js` hoặc MCP |
+| Mixed mode (frame + MC) | 🔴 CHECKPOINT nhóm → `flow-job-mixed.js` (1 lệnh: frame → char → poll → download) |
+| Model có phí | 🔴 DỪNG — checkpoint tín dụng |
+| 403/reCAPTCHA | 🛑 STOP CỨNG — báo Long |
+| Viết mới prompts.md quảng cáo | Áp Phần H (5 pattern + 10 checklist) |
+| Config chip còn 🍌 | Chuyển tab Video trước khi fire |
+| Ghép clip | ffmpeg concat local, KHÔNG dùng Cảnh web |
+
+### Map phần skill
+| Phần | Nội dung | Khi nào đọc |
+|---|---|---|
+| A | Quy trình 7 bước | Mọi job |
+| B | Recipe gen video (config, gen, dialog, API, fail) | Khi fire/config |
+| C | Nhân vật (tạo, giọng, gắn) | Job có MC |
+| D | Tải video, scene editor, ghép ffmpeg | Sau render |
+| E | Upload ảnh, quản lý project | Khi cần upload/đổi tên |
+| F | Môi trường, CDP, gỡ lỗi | Khi gặp lỗi |
+| G | Runner scripts (bảng lệnh, kỹ thuật) | Mọi job (ưu tiên runner) |
+| H | Viết prompts.md quảng cáo | Job mới chưa có prompts.md |
+
+---
 
 ## ⛔ CẤM LÀM (blacklist — rà trước mỗi job, vi phạm là hỏng thật đã xảy ra)
 
@@ -41,7 +85,7 @@ metadata:
 
 ---
 
-# PHẦN A — QUY TRÌNH LÀM JOB (chạy theo thứ tự)
+# PHẦN A — QUY TRÌNH LÀM JOB {#phan-a} (chạy theo thứ tự)
 
 ## BƯỚC 0 — ĐỌC TÀI LIỆU GỐC (bắt buộc, mỗi job)
 Đọc theo thứ tự, đừng bỏ qua vì "nhớ rồi":
@@ -54,7 +98,10 @@ metadata:
 ## BƯỚC 1 — XỬ LÝ ẢNH KHÁCH (không xài thẳng ảnh khách)
 - Ảnh khách thường mờ / dính logo / screenshot điện thoại → KHÔNG dùng trực tiếp làm frame Bắt đầu.
 - Mờ/logo/watermark → Flow (Nano Banana 2): "làm nét, xóa logo/watermark, làm sạch" → **tạo ảnh MỚI đẹp hơn tương tự** (ảnh khách chỉ làm ref). Ảnh mới = frame Bắt đầu.
-- **Recipe gen frame HÀNG LOẠT (verify job Kệ v4, 2026-07-06):** config image mode 🍌 Nano Banana 2 · tỉ lệ theo job · x2/cảnh → upload ảnh khách vào project (`input[type=file]`; alt trong dialog = TÊN FILE) → mỗi cảnh: attach ref qua add_2 (recipe dialog Phần B) + prompt mô tả frame đích (khớp Subject/Location/Lighting của prompts.md, thêm "không chữ không watermark") → fire liên tiếp → chọn tay bản đẹp → đặt tên `*_final.jpg` upload lại làm frame/ingredient (alt deterministic).
+- **Recipe gen frame HÀNG LOẠT** (verify job Kệ v4, 2026-07-06):
+  1. Upload ảnh khách vào project (`input[type=file]`; alt trong dialog = TÊN FILE).
+  2. **Auto:** `node flow-gen-frames.js frames.json` — tự switch image mode, attach ref, fire prompt, collect workflowIds. Input: `{project, scenes: [{id, refImage: "ten_file.jpg", prompt: "mô tả frame đích, không chữ không watermark"}]}`.
+  3. QC: download → chọn bản đẹp → đặt tên `*_final.jpg` upload lại làm frame/ingredient.
 - **Map ảnh↔cảnh:** response `batchGenerateImages` có `media[].workflowId` + `requestData.promptInputs[0].textInput` = prompt GỐC + `fifeUrl`. ⚠️ `generatedImage.prompt` và alt tile bị DỊCH sang tiếng Anh — map bằng `textInput` hoặc edit-page, ĐỪNG map bằng alt.
 
 ## BƯỚC 2 — NHÂN VẬT (nếu job có MC/người) — recipe đầy đủ Phần C
@@ -88,26 +135,37 @@ metadata:
 - Cách đúng = image-to-video từ KHUNG ĐẦU cố định: (1) ảnh logo 1:1 nền trắng nét; (2) ảnh tĩnh từng phân cảnh (Nano Banana, ảnh thật + logo 1:1); (3) ảnh tĩnh làm first frame → animate.
 - Chữ Việt có dấu → overlay CapCut. Số/tiếng Anh ngắn Flow sinh được.
 
-## BƯỚC 5 — CONFIG FLOW (recipe Phần B)
+## BƯỚC 5 — CONFIG FLOW
 - **Config mặc định của Long:** Thành phần · 9:16 · x4 · Veo 3.1 - Lite [Lower Priority] (0 tín dụng) · 8s. TRỪ khi brief job yêu cầu khác (quảng cáo ngang → 16:9). Bám brief trước, mặc định sau.
+- **Lệnh nhanh:** `node flow-config.js <projectId>` → verify `CHIP_AFTER:` khớp expectConfig.
 - B-roll = Khung hình (frame đầu = ảnh đã xử lý). MC/talking = Thành phần + nhân vật + ảnh HERO.
-- **⚠️ Job TRỘN B-roll + MC trong cùng project → GOM CẢNH THEO CHẾ ĐỘ, đừng đan xen.** Fire hết nhóm Khung hình → real-click đổi tab Thành phần → verify chip → fire nhóm còn lại. Mỗi lô fire chỉ 1 chế độ; quên đổi tab → cảnh MC rơi về text-to-video, MẤT mặt nhân vật. **Nhóm có nhân vật fire bằng MCP/script one-off theo Phần G, KHÔNG dùng `flow-fire.js`.**
-- Set nhanh: `flow-config.js` (Phần G) — verify dòng `CHIP_AFTER:`.
+- **⚠️ Job TRỘN B-roll + MC trong cùng project → GOM CẢNH THEO CHẾ ĐỘ, đừng đan xen.** Fire hết nhóm Khung hình (`flow-fire-frame.js`) → real-click đổi tab Thành phần → verify chip → fire nhóm MC (`flow-fire-char.js`). Mỗi lô fire chỉ 1 chế độ; quên đổi tab → cảnh MC rơi về text-to-video, MẤT mặt nhân vật.
+- **🔴 CHECKPOINT · MIXED MODE:** job trộn frame + char → báo Long phương án nhóm (cảnh nào Khung hình, cảnh nào Thành phần) trước khi fire.
+- **⚠️ ROLLBACK MIXED PARTIAL:** `flow-job-mixed.js` phase 1 (frame) OK nhưng phase 2 (char) fail → clip frame ĐÃ fire VẪN render bình thường. Đọc `fire-frame-report.json` + `fire-char-report.json` trong outDir xem cảnh nào thiếu → soạn lại spec chỉ chứa cảnh char fail → chạy `flow-fire-char.js` riêng → `flow-download.js` tải hết.
 - **⚠️ Project mới/lạ hay dính mode 🍌 (image):** chip `🍌 ... crop... xN` = bấm Tạo ra ẢNH. LUÔN verify chip trước khi fire.
 
-## BƯỚC 6 — GEN ĐỒNG THỜI + VERIFY + TẢI VỀ (recipe Phần B/D/G)
+## BƯỚC 6 — GEN ĐỒNG THỜI + VERIFY + TẢI VỀ
+- **🔴 CHECKPOINT · FIRST FIRE:** job mới/loại mới lần đầu → báo Long tóm tắt (số cảnh, config, model, tín dụng dự kiến) trước khi fire. Job training/test → bỏ qua checkpoint này.
 - **⭐ LUẬT LONG: FIRE TẤT CẢ CẢNH LIÊN TIẾP, KHÔNG CHỜ.** Render là việc của server.
-- Text-to-video thuần → `flow-fire.js`. Cảnh frame/ingredient → Phần G nhưng giữ nhịp fire liên tiếp.
-- Fire hết mới verify: **Veo Lite [LowPri] HAY FAIL SILENT lúc tải cao** → `flow-status.js` đếm tile vs số cảnh; thiếu → xử theo cây quyết định FAIL SILENT (Phần B): cảnh còn ≥2 take → chấp nhận + ghi report, chỉ re-fire cảnh 0-1 take.
+- **Lệnh nhanh (text-to-video):** `node flow-job.js <scenes.json> <outDir>` — tự fire → poll → download.
+- Cảnh frame/ingredient → `flow-fire-char.js` hoặc MCP (giữ nhịp fire liên tiếp).
+- Fail silent → `flow-status.js` đếm tile; cảnh ≥2 take → OK; 0-1 take → re-fire (runner tự xử). Chi tiết: Phần B §B4.
 - Tải: `flow-download.js` về `Jobs/<Tên>/output/` + manifest.
 - **🔴 CHECKPOINT · GHI ĐÈ OUTPUT:** output đích đã có .mp4 đợt trước → KHÔNG ghi đè/xóa. Tạo `output_<mô tả>/` mới hoặc hỏi Long.
 
 ## BƯỚC 7 — BÀN GIAO
 - Output lưu `output/` + `README_output.md` map file↔cảnh. Nhắc hậu kỳ CapCut: dub/voice theo Line, overlay chữ Việt + logo, color grading, cắt theo beat.
+- **Checklist bàn giao:**
+  1. Đếm mp4 = số cảnh × multiplier (x4 = 4 clip/cảnh) — thiếu → re-fire hoặc download bù.
+  2. `ffprobe -v error -show_entries format=duration` mỗi file — đảm bảo đủ 8s (hoặc 4/6/10s tùy config).
+  3. `README_output.md` có map file↔cảnh + prompt gốc + config + ngày gen.
+  4. Báo Long: số clip, tổng thời lượng, model đã dùng, link/path output.
 
 ---
 
-# PHẦN B — RECIPE GEN VIDEO
+# PHẦN B — RECIPE GEN VIDEO {#phan-b}
+
+### B1. CONFIG
 
 ## Chuyển sang chế độ Video
 Chip config bottom bar (`🍌 model | crop | Nx`) → menu 2 tab đầu **Hình ảnh / Video** → chọn **Video**. Config đều là Radix `tablist`/`[role=tab]` → PHẢI real click Playwright (`locator.click()` trusted; `.click()` DOM trong evaluate KHÔNG ăn React).
@@ -128,8 +186,9 @@ Chip config bottom bar (`🍌 model | crop | Nx`) → menu 2 tab đầu **Hình 
 - Chi phí = giá bảng × số lượng. **Lite [Lower Priority] = FREE mọi mức** (render chậm hơn ~50s). Quality = 100/clip.
 - **🔴 CHECKPOINT · TIÊU TÍN DỤNG:** gen bằng model giá > 0 → DỪNG, báo Long tổng tín dụng (giá × số lượng × số cảnh), chờ duyệt mới fire.
 
-## Gen
-Escape đóng menu → gõ prompt vào `[data-slate-editor]` (`keyboard.insertText`) → verify chip (includes từng token rời — Phần G) → nút `arrow_forward Tạo`. Prompt tự xóa sau submit. Render ~45-60s server-bound → submit xong sang cảnh kế NGAY.
+### B2. GEN + DIALOG
+
+## Gen → gõ prompt vào `[data-slate-editor]` (`keyboard.insertText`) → verify chip (includes từng token rời — Phần G) → nút `arrow_forward Tạo`. Prompt tự xóa sau submit. Render ~45-60s server-bound → submit xong sang cảnh kế NGAY.
 
 ## Chế độ KHUNG HÌNH (frame đầu/cuối)
 - Bật: tab Video → tab `crop_free Khung hình`. Ô prompt hiện 2 slot **`Bắt đầu` ⇄ `Kết thúc`** (nút `swap_horiz` đảo).
@@ -139,19 +198,23 @@ Escape đóng menu → gõ prompt vào `[data-slate-editor]` (`keyboard.insertTe
 ## Chế độ THÀNH PHẦN (ingredient/ref)
 - Nút `add_2 Tạo` mở picker (tab Nhân vật / Hình ảnh...). Attach theo recipe dialog. Nút `close Xoá câu lệnh` = clear cả prompt + ingredients.
 
-## ⭐ DIALOG MEDIA PICKER (add_2 / slot Khung hình) — recipe chuẩn (vá 2026-07-06, job Kệ v4)
+## ⭐ DIALOG MEDIA PICKER (add_2 / slot Khung hình) — recipe chuẩn (vá 2026-07-06, job Kệ v4) {#dialog-picker}
 - **Mọi click trong dialog = Playwright `locator.click()` trusted.** Click theo tọa độ (evaluate getBoundingClientRect + `mouse.click`) fail IM LẶNG trên React — đã mắc thật.
 - **Dialog NHỚ tab lần mở trước** và **ô search `Tìm kiếm thành phần` CHỈ tìm trong tab hiện tại** → LUÔN click đúng tab (có verify) TRƯỚC rồi mới tìm item. Search match tên file có underscore (`ke_nen_trang` ra); gõ space thay underscore = không ra.
 - **Pattern attach:** click tab → chờ `img[alt="<tên file>"]` (4s không thấy → fill search rồi chờ tiếp) → click item → poll chip/thumbnail trên prompt bar; **chưa có chip → bấm `Thêm vào câu lệnh`** (ảnh LUÔN cần; nhân vật thường tự gắn, có preview pane thì cũng phải bấm — poll chip làm chuẩn, đừng bấm thừa gây double).
 - **Trùng tên item (vd 2 nhân vật cùng tên):** click có thể treo 30s dù ĐÃ select → poll chip trước; CHƯA có chip mới retry `{force:true}` + bấm `Thêm vào câu lệnh` (có chip rồi mà bấm nữa = double-attach).
 - **Ingredient/frame bị CLEAR sau mỗi lần Tạo** → gắn lại trước từng cảnh; verify fire đầu bằng endpoint (bảng dưới).
 
+### B3. API + VERIFY
+
 ## API endpoint theo chế độ (Bearer, cho runner)
 - Text-to-video: `POST https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoText`
 - Frame đầu: `.../video:batchAsyncGenerateVideoStartImage` · đầu+cuối: `...StartAndEndImage` · ingredient: `...ReferenceImages`
 - Poll: `.../video:batchCheckAsyncVideoGenerationStatus`, body `{"media":[{"name":"<mediaId>","projectId":"..."}]}`, response media[] có `workflowId` + `mediaMetadata.mediaTitle` (= prompt) + `createTime`. Hook `page.on('response')` lọc `batchAsyncGenerateVideo` để verify fire (đừng nhầm `batchCheckAsync...Status`).
 
-## FAIL SILENT (Lite Lower Priority)
+### B4. FAIL HANDLING + FIRE ĐỒNG THỜI
+
+## FAIL SILENT
 Tải cao → lô fire có thể fail hẳn: không tile, không lỗi, chỉ thiếu trong grid. Phát hiện: đếm tile vs số cảnh fired (theo workflowId từng cảnh).
 - **Cây quyết định khi phát hiện thiếu — xét TỪNG cảnh, đúng thứ tự:**
   1. Đợt fire có ≥1 phản hồi 403/reCAPTCHA → 🛑 STOP CỨNG (dòng dưới cùng), không xét tiếp.
@@ -162,15 +225,13 @@ Tải cao → lô fire có thể fail hẳn: không tile, không lỗi, chỉ th
 - **🛑 STOP CỨNG · BÃO 403/reCAPTCHA:** gặp ≥1 phản hồi 403 trong đợt fire → DỪNG toàn bộ, KHÔNG re-fire (nuôi bão), báo Long chờ lắng.
 
 ## ⭐ Fire ĐỒNG THỜI nhiều cảnh (luật Long 2026-07-04)
-- Vòng lặp mỗi cảnh: gắn frame/ingredient → dán prompt → Tạo → verify request `batchAsyncGenerateVideo` đã bắn → cảnh kế LUÔN. Không đợi render/tile.
-- Số đo thực: cảnh 1-2 fire ~1s; sau đó cap đồng thời (~8 job) → ~20-45s/cảnh là bình thường, tool tự chờ. 3 cảnh x4 = 23s; render xong ~2-3 phút.
-- Fire hết → `flow-status.js` bắt fail-silent → re-fire thiếu → `flow-download.js` tải một lượt. Trong lúc render: làm việc khác của job, đừng ngồi poll.
-- **⚠️ JOB ≥6 CẢNH — FIRE THEO LÔ 3-4 CẢNH, đừng bơm 1 phát (bài học 2026-07-14, job mèo 8 cảnh x2):** bơm liên tiếp 8 cảnh → server KHÓA nút Tạo >10s → `flow-job`/`flow-fire` bỏ cuộc (`NOT_FIRED ... after 26s` / `JOB_ABORT`), rớt cảnh. Nút `refreshThử lại`/`closeHủy` xuất hiện trong `LAST_BUTTONS` = server đang nghẽn. Cách làm: chia scenes.json thành lô 3-4 cảnh → fire lô 1 → chờ ~25-30s cho throttle nhả → fire lô kế bằng `flow-fire.js` (KHÔNG poll giữa chừng, để clip đang render chạy tiếp). Cảnh rớt → gom vào scenes.json riêng chỉ chứa cảnh thiếu, fire bù.
-- **⚠️ workflowId trống + "top-N grid" KHÔNG đủ khi 1 job nhiều cảnh (verify 2026-07-14):** response gen về muộn → fire-report thường 0 workflowId → map cảnh↔clip bằng `manifest.json` label (đã dịch tiếng Việt, đủ để nhóm theo cảnh). Cảnh fire SỚM render trước bị đẩy sâu, cảnh sau ra nhiều take chiếm top → "top-16" KHÔNG chứa đủ 8 cảnh → tải RỘNG (≥2× số clip kỳ vọng) rồi nhóm theo label, chọn 1 take/cảnh. Terminal cap 180s hay cắt giữa download nhiều clip → node vẫn chạy nền: chờ `manifest.json` xuất hiện + số file ổn định là xong, đừng tưởng fail.
+- **LUẬT: fire TẤT CẢ cảnh LIÊN TIẾP**, không chờ render. Verify request `batchAsyncGenerateVideo` bắn → cảnh kế LUÔN.
+- Fire hết → `flow-status.js` → re-fire thiếu → `flow-download.js`. Trong lúc render: làm việc khác.
+- **Throttle + timing + workflowId mapping → xem Phần G** (đã fix trong runner, `flow-job` tự xử).
 
 ---
 
-# PHẦN C — RECIPE NHÂN VẬT
+# PHẦN C — RECIPE NHÂN VẬT {#phan-c}
 
 ## Tạo
 - Sidebar `accessibility_new Nhân vật` → `/project/<id>/characters`. Prompt phải có **nền TRẮNG**.
@@ -182,6 +243,7 @@ Tải cao → lô fire có thể fail hẳn: không tile, không lỗi, chỉ th
 - **Mô tả tính cách:** `placeholder="Mô tả tính cách..."` → click → type → Tab/blur.
 - **⭐ BẮT BUỘC bấm `Xong`** mới commit — thoát ngang là MẤT.
 - Xóa: `delete Xoá nhân vật` → confirm.
+- **🔴 CHECKPOINT · XÓA NHÂN VẬT:** hỏi Long trước khi xóa — nhân vật có thể đang dùng ở job khác cùng project.
 
 ## Giọng nói
 - `voice_selection Chọn giọng nói` → dialog. Cột trái = ~30 giọng gốc (giọng NGOẠI). Chọn → `Thêm vào nhân vật`.
@@ -198,7 +260,7 @@ Preview trả `blob:` wav (~120KB/câu), Web Audio. (1) hook `page.on('response'
 
 ---
 
-# PHẦN D — TẢI VIDEO VỀ & SCENE EDITOR
+# PHẦN D — TẢI VIDEO VỀ & SCENE EDITOR {#phan-d}
 
 ## Tải video
 - **Hàng loạt (ưu tiên):** `flow-download.js` — lấy `src` từ thẻ `<video>` trong grid, fetch `ctx.request` (ăn cookie), ~2-8MB/clip, kèm `manifest.json`.
@@ -207,7 +269,10 @@ Preview trả `blob:` wav (~120KB/câu), Web Audio. (1) hook `page.on('response'
 - Lưu `Jobs/<Tên>/output/` + `README_output.md`.
 
 ## Scene editor (`/project/<id>/edit/<sceneId>`)
+- Mở: click tile video trong grid → trang edit. URL pattern: `https://labs.google/fx/tools/video-fx/edit/<editId>`.
 - Có: Tải xuống · **`Lưu khung hình`** (trích frame làm ref) · **`Thêm đoạn trích video`** (nối/mở rộng cảnh) · ô "Mô tả nội dung chỉnh sửa" + Tạo (sửa/nối tiếp).
+- **Prompt gốc:** hiện trên trang edit → dùng map cảnh↔clip khi workflowId thiếu (xem §G).
+- **Trích frame:** `Lưu khung hình` → chọn timestamp → download .jpg — dùng làm frame Bắt đầu cho gen tiếp.
 
 ## ⭐ GHÉP/NỐI NHIỀU CLIP → FFMPEG LOCAL, KHÔNG dùng chức năng "Cảnh" của Flow (Long chốt 2026-07-14)
 - Chức năng **Cảnh** (sidebar `movie Xem các cảnh` → view `/scene/<id>`) là trình dựng nối clip trên web. Luồng: view Cảnh → `add Thêm nội dung nghe nhìn` → menuitem `play_movies Tạo cảnh` → editor có timeline + nút `Thêm đoạn trích video` → picker → chọn tile → `Thêm vào cảnh` → `Xong`.
@@ -223,7 +288,7 @@ Preview trả `blob:` wav (~120KB/câu), Web Audio. (1) hook `page.on('response'
 
 ---
 
-# PHẦN E — UPLOAD ẢNH & QUẢN LÝ PROJECT
+# PHẦN E — UPLOAD ẢNH & QUẢN LÝ PROJECT {#phan-e}
 
 ## Upload ảnh ref
 - `add_2 Tạo` → dialog → `Tải nội dung nghe nhìn lên` → file chooser. Hoặc `page.locator('input[type=file]').setInputFiles(absPath)` (không giới hạn root; MCP `browser_file_upload` chỉ nhận path trong workspace).
@@ -244,10 +309,13 @@ Nút `Tác nhân`: bật = thanh config biến mất, gãy selector. GIỮ TẮT
 
 ---
 
-# PHẦN F — MÔI TRƯỜNG & LỖI
+# PHẦN F — MÔI TRƯỜNG & LỖI {#phan-f}
 
 ## Browser — kiến trúc CDP MỘT Chrome (từ 2026-07-05)
 - **MỘT Chrome automation** cho cả MCP lẫn runner: Chrome hệ thống + profile `chrome-nhi-profile` (login Flow sẵn), **CDP 9666**, tự start cùng Windows (`chrome-flow-cdp.vbs` Startup). Chrome cá nhân của Long là process khác — KHÔNG đụng.
+- **Env vars (portability):**
+  - `FLOW_CDP` — CDP endpoint (default `http://127.0.0.1:9666`). Đổi port hoặc remote: `export FLOW_CDP=http://192.168.1.5:9222`.
+  - `FLOW_CHAR_URL` — URL nhân vật cho `flow-mytab.js` (default: project test Long). Đổi khi dùng nhân vật khác.
 - **MCP không tự spawn browser:** `@playwright/mcp --cdp-endpoint http://127.0.0.1:9666` → MCP + runner nhìn CÙNG browser/tab/login. (Kiến trúc 2 browser cũ = nguồn blank page/profile lock — ĐÃ BỎ.)
 - **Tốc độ:** (1) thao tác lặp → runner Phần G; (2) điều khiển browser nhiều bước → gộp loop vào MỘT lệnh chạy JS trên page (browser tool hiện có), không snapshot xen giữa; (3) tab nền bị throttle → `bringToFront` trước khi nghe network/poll; (4) không mở tab mới thừa.
 - **Bảng gỡ lỗi (X → làm Y, vẫn hỏng → Z):**
@@ -262,9 +330,19 @@ Nút `Tác nhân`: bật = thanh config biến mất, gãy selector. GIỮ TẮT
 | Nút `Tạo` mờ/disabled | Mờ TẠM vài giây = cap đồng thời → CHỜ | Mờ MÃI = (a) prompt rỗng; (b) Khung hình thiếu frame Bắt đầu; (c) chip 🍌 → chuyển tab Video |
 | Click item dialog treo 30s | Trùng tên item / bị che → item thực ra ĐÃ select → retry `{force:true}` + bấm `Thêm vào câu lệnh` | Escape, mở lại dialog, dùng ô search |
 | `JSON.parse` nghẹn token lạ đầu file scenes.json | BOM của PowerShell `Out-File utf8` → viết spec bằng Write tool | Strip khi đọc: `content.replace(/^﻿/, '')` |
+| Network mất giữa fire/download (ETIMEDOUT/ECONNRESET) | Retry lệnh y hệt — `flow-download.js` RESUME tự bỏ qua clip đã tải; `flow-job.js` check fire-report có sẵn → chỉ fire cảnh thiếu | Mất mạng lâu → chờ mạng lên, `curl -s http://127.0.0.1:9666/json/version` verify CDP còn sống, rồi retry |
+| Chrome crash giữa flow-job (node exit ECONNREFUSED đột ngột) | Relaunch Chrome KÈM URL (dưới) → chờ 5s → chạy lại `flow-job.js` CÙNG scenes.json + outDir MỚI (outDir cũ có mp4 → ABORT) | Nếu relaunch cũng crash → check RAM/GPU, kill chrome zombie processes |
+| Fire bù sau Chrome crash (cảnh đã fire trước crash) | Đọc fire-report cũ xem cảnh nào đã fire → soạn scenes.json chỉ chứa cảnh thiếu → fire bù vào outDir MỚI | Clip cảnh cũ vẫn render trên server — `flow-download.js` tải riêng sau |
+| flow-job/flow-fire exit 1 im lặng (no error) | `background=true` NUỐT stdout → chạy foreground `timeout 300` hoặc redirect `> log 2>&1` rồi đọc log | Đọc fire-report.json + media-map.json check tiến trình; cảnh thiếu → fire bù thủ công |
+| Disk full giữa download (`ENOSPC`) | `flow-download.js` ghi manifest tăng dần → clip đã tải OK. Dọn dung lượng → chạy lại y hệt (RESUME skip clip cũ) | `df -h /c` check; xóa file rác trong output cũ hoặc di chuyển sang ổ khác |
+| mp4 truncated/corrupt (file size < 500KB hoặc ffprobe fail) | `ffprobe -v error -show_entries format=duration <file>` — lỗi = corrupt → xóa file + chạy lại download (RESUME tải lại file thiếu) | Re-fire cảnh đó nếu clip gốc trên Flow cũng lỗi |
+| Quota Flow hết giữa batch (429 Too Many Requests) | Tương tự 403 — DỪNG fire, báo Long. Clip đã fire trước đó vẫn render bình thường | Chờ reset quota (thường 24h), fire bù cảnh còn lại |
+| Chrome profile corrupt (launch fail / crash loop) | Xóa `chrome-nhi-profile/Default/GPUCache` + `chrome-nhi-profile/Default/Cache` → relaunch | Xóa toàn bộ profile → relaunch → login lại Flow (hỏi Long trước vì mất session) |
+| 401 Unauthorized / token expired giữa job | Runner dùng cookie (miễn nhiễm). API thủ công: `GET .../auth/session` lấy token mới → retry request. KHÔNG coi là fail, KHÔNG re-fire | Cookie cũng hết hạn (rất hiếm) → login lại Flow trong Chrome, runner tự nhận cookie mới |
 
 - **Relaunch Chrome CDP (BẮT BUỘC kèm URL Flow — launch trống từng chết ngay):**
-  `Start-Process "C:\Program Files\Google\Chrome\Application\chrome.exe" -ArgumentList '--remote-debugging-port=9666','--user-data-dir=C:\Users\loggz\AppData\Local\chrome-nhi-profile','--no-first-run','--no-default-browser-check','<url Flow project>'`
+  Trong Git Bash, lệnh `Start-Process` gọi trực tiếp sẽ xịt im lặng. BẮT BUỘC bọc qua powershell:
+  `powershell -Command "Start-Process 'C:\Program Files\Google\Chrome\Application\chrome.exe' -ArgumentList '--remote-debugging-port=9666','--user-data-dir=C:\Users\loggz\AppData\Local\chrome-nhi-profile','--no-first-run','--no-default-browser-check','<url Flow project>'"`
 - **Rule Long:** đừng tự tắt Chrome khi chưa hỏi. Profile cũ `ms-playwright-mcp\mcp-chrome-*` để nguyên không xóa nhưng KHÔNG dùng.
 
 ## Test Project
@@ -280,9 +358,11 @@ Training/test → "Test Project" id `a9e68afc-d6fc-4563-b428-e217cd47ef40`. Job 
 
 ---
 
-# PHẦN G — RUNNER SCRIPTS (.js, chạy qua CDP — 0 token/bước)
+# PHẦN G — RUNNER SCRIPTS {#phan-g} (.js, chạy qua CDP — 0 token/bước)
 
 **Scripts bundle sẵn trong skill: `<skill_dir>/scripts/*.js`** (self-contained; `playwright-core` đã cài trong `scripts/node_modules`). Chạy từ thư mục `scripts/`: `cd <skill_dir>/scripts && node flow-*.js ...`. Cần node ≥18. Nguyên lý: `playwright-core.connectOverCDP('http://127.0.0.1:9666')` → trusted click/network hook như MCP nhưng cả vòng lặp trong 1 lệnh shell, không tốn vòng model.
+
+**Unit tests:** `node --test scripts/test/flow-lib.test.js` — 21 tests cho `assignBirths`, `trackFires`, `trackBirths`, `checkConfig`, module exports. Mock playwright-core, chạy không cần Chrome. Zero deps (dùng `node:test` built-in).
 
 ## Bảng lệnh runner
 
@@ -291,12 +371,18 @@ Training/test → "Test Project" id `a9e68afc-d6fc-4563-b428-e217cd47ef40`. Job 
 | `flow-config.js` | `node flow-config.js <projectId> [model] [aspect] [count] [duration]` | Set config video (mặc định Video · Thành phần · Veo 3.1 Lite [Lower Priority] · 9:16 · x4 · 8s). In `CHIP_AFTER:` để verify. `DEBUG=1` soi menu. |
 | `flow-fire.js` | `node flow-fire.js <scenes.json> [report.json]` | Bơm N cảnh text-to-video LIÊN TIẾP không chờ render. Config lệch → exit 3. Report mặc định `last-fire-report.json`. |
 | `flow-fire-char.js` | `node flow-fire-char.js <char-scenes.json> [report.json]` | Fire N cảnh KÈM NHÂN VẬT (ingredient, chế độ Thành phần); tự gắn lại ingredient trước từng cảnh. |
+| `flow-fire-frame.js` | `node flow-fire-frame.js <frame-scenes.json> [report.json]` | Fire N cảnh chế độ KHUNG HÌNH (frame đầu); tự gắn lại frame trước từng cảnh. scenes.json: `{project, expectConfig, scenes:[{id, prompt, frame:"tên_file.jpg"}]}`. |
+| `flow-gen-frames.js` | `node flow-gen-frames.js <frames.json> [report]` | **BƯỚC 1 auto:** config image mode → attach ref ảnh khách → fire prompt gen frame → collect workflowIds. Input: `{project, scenes: [{id, refImage, prompt}]}`. Ref image phải upload trước. |
+| `flow-job.js` | `node flow-job.js <scenes.json> <outDir> [report]` | **Job trọn vẹn**: fire → poll nền (adaptive 15/30/45s) → download → đặt tên. **Async spawn** — không block. |
+| `flow-job-mixed.js` | `node flow-job-mixed.js <mixed.json> <outDir>` | **⭐ Job MIXED (frame+char):** tự chạy tuần tự Khung hình → Thành phần → poll → download. **Async spawn.** 1 lệnh cho toàn bộ job trộn chế độ. |
 | `flow-status.js` | `node flow-status.js <projectId> [listenSeconds=20]` | `bringToFront` rồi nghe poll render + đếm grid (cuộn virtualized). `NO_POLLS_EARLY`/`ALL_TERMINAL` = xong. |
 | `flow-download.js` | `node flow-download.js <projectId> <outDir> [maxCount] [idsFile]` | Gom video (cuộn-gom) tải song song 3 luồng + retry + `manifest.json`. `idsFile` = JSON array editId → chỉ tải đúng clip đó (an toàn job song song). **RESUME (2026-07-14): bỏ qua clip đã tải + ghi manifest tăng dần sau mỗi clip → terminal cắt giữa chừng thì chạy lại LỆNH Y HỆT để tải nốt, không mất manifest, không tải lại từ đầu.** |
-| `flow-job.js` | `node flow-job.js <scenes.json> <outDir> [report.json]` | **⭐ Chạy TRỌN job:** fire (tự chọn text/char theo spec) → poll đủ SUCCESSFUL → download → đặt tên theo cảnh; tự RE-FIRE cảnh thiếu 1 lần; nguồn chuẩn = editId từ fire response → an toàn chạy song song cùng project. outDir phải MỚI (còn .mp4 cũ → tự ABORT). |
-| `flow-voice.js` | `node flow-voice.js <descPath> <voiceName> <outWav>` | Tạo giọng custom + bắt audio Xem trước về wav (URL nhân vật hardcode trong file — sửa khi đổi nhân vật). |
+| `flow-job.js` | `node flow-job.js <scenes.json> <outDir> [report.json]` | **⭐ Chạy TRỌN job:** fire (tự chọn text/char theo spec) → poll đủ SUCCESSFUL → download → đặt tên theo cảnh; tự RE-FIRE cảnh thiếu 1 lần; nguồn chuẩn = editId từ fire response → an toàn chạy song song cùng project. outDir phải MỚI (còn .mp4 cũ → tự ABORT). **Mixed-mode (frame+char):** chạy 2 lần — `flow-fire-frame.js` cho nhóm Khung hình + `flow-fire-char.js` cho nhóm Thành phần → sau đó `flow-download.js` tải hết. |
+| `flow-voice.js` | `node flow-voice.js <descPath> <voiceName> <outWav> [charUrl]` | Tạo giọng custom + bắt audio Xem trước về wav. `charUrl` = URL trang nhân vật (mặc định: project test của Long). |
 
 `flow-lib.js` = code chung (connect CDP, tìm page, check chip, gõ prompt + fire, bắt request gen, tự chữa blank page); `flow-mytab.js` = helper page. Đừng gọi trực tiếp.
+
+**📦 Đóng gói skill này lên git cho máy khác cài:** xem `references/git-distribution.md` (stage bản sạch, loại node_modules, .gitignore, README nêu npm install + CDP 9666, kiểm token thật trước khi push API).
 
 **⚠️ Chạy node qua git-bash (MSYS): file arg PHẢI là path Windows native `C:\...`, KHÔNG dùng `/c/...` hay `$HOME/...`.** MSYS mangle POSIX path khi truyền cho `node` → nhận `C:\c\Users\...` → MODULE_NOT_FOUND. Đúng: `cd 'C:\...\scripts' && node flow-job.js 'C:\...\scenes.json'`. Áp cho cả path scenes.json/report/outDir truyền vào runner.
 
@@ -317,15 +403,23 @@ Training/test → "Test Project" id `a9e68afc-d6fc-4563-b428-e217cd47ef40`. Job 
 
 **⭐ THROTTLE (fix 2026-07-14, verified 6 cảnh x2):** fire >2 cảnh liên tiếp → server khóa nút Tạo ~20-40s. `fireScene` (flow-lib) chờ enable tới 40s và KHÔNG BAO GIỜ throw — cảnh bị nghẽn trả `{ok:false, throttled:true}`, KHÔNG làm sập job. `flow-fire`/`flow-fire-char` gom cảnh throttled, chờ 30s rồi fire bù 1 lần. Nhờ vậy job ≥6 cảnh fire đủ trong 1 lần chạy; `totalFired` luôn được ghi → `flow-job` không còn `JOB_ABORT` oan. Bài học cũ (fire lô 3-4 cảnh thủ công) KHÔNG còn cần — cứ đưa cả job cho `flow-job`.
 
-## Cảnh CÓ frame/ingredient — fire liên tiếp bằng MCP/script one-off (runner chưa phủ)
-`flow-fire.js` chỉ text-to-video thuần. Cảnh có ảnh gắn → viết script one-off (mẫu tham khảo — nếu workspace còn — là `fire_khunghinh_v4.js`/`fire_thanhphan_v4.js` của job Kệ v4) hoặc dùng MCP, giữ luật fire liên tiếp, gộp cả loop 1 lệnh:
-1. Verify chip đúng `expectConfig` (thấy 🍌 → chuyển tab Video).
-2. Mỗi cảnh: gắn frame/ingredient theo **recipe dialog Phần B** → dán prompt → `arrow_forward Tạo` (chờ enabled) → verify request `batchAsyncGenerateVideo*` bắn → cảnh kế NGAY.
-3. Ingredient/frame bị clear sau mỗi Tạo → gắn LẠI trước từng cảnh.
-4. Fire hết → `flow-status.js` → `flow-download.js` (map theo workflowId, KHÔNG "top N grid").
-Endpoint verify chế độ: frame đầu = `...StartImage`; đầu+cuối = `...StartAndEndImage`; ingredient = `...ReferenceImages`.
+## Cảnh CÓ frame/ingredient — runner có sẵn
+- **Khung hình (frame đầu):** `flow-fire-frame.js` — tự gắn frame từ dialog trước mỗi cảnh. Spec:
+  ```json
+  {
+    "project": "a9e68afc-...",
+    "expectConfig": ["Video", "crop_9_16", "x4"],
+    "scenes": [
+      {"id": "scene_1", "prompt": "Time: ...\nCamera: ...", "frame": "san_pham_final.jpg"},
+      {"id": "scene_2", "prompt": "Time: ...\nCamera: ...", "frame": "mc_hero_final.jpg"}
+    ]
+  }
+  ```
+- **Thành phần (nhân vật):** `flow-fire-char.js` — tự gắn ingredient.
+- Cả hai runner giữ luật fire liên tiếp, tự fire bù cảnh throttled.
+- Verify endpoint: frame đầu = `...StartImage`; đầu+cuối = `...StartAndEndImage`; ingredient = `...ReferenceImages`.
 
-## Ghi chú kỹ thuật runner (bài học training)
+## Ghi chú kỹ thuật runner (bài học training — NGUỒN CHÍNH cho chip verify, throttle, workflowId mapping)
 - **Chip config = nguồn sự thật:** `button:has-text("crop_")` cuối. **VERIFY bằng `chipText.includes(token)` từng token rời, KHÔNG match nguyên chuỗi** — chip render có/không dấu `|` giữa token.
 - Menu config: tabs `[role=tab]`, model dropdown `arrow_drop_down` → `[role=menuitem]`. Real click Playwright mới ăn React.
 - Prompt: click `[data-slate-editor]` → Ctrl+A Delete → `keyboard.insertText` → nút `arrow_forward` cuối, chờ enabled.
@@ -336,7 +430,7 @@ Endpoint verify chế độ: frame đầu = `...StartImage`; đầu+cuối = `..
 
 ---
 
-# PHẦN H — VIẾT PROMPTS.MD: PATTERN TỪ QUẢNG CÁO KINH ĐIỂN
+# PHẦN H — VIẾT PROMPTS.MD {#phan-h}: PATTERN TỪ QUẢNG CÁO KINH ĐIỂN
 
 Nguồn: 5 ad kinh điển agy bóc tách 2026-07-04; phân tích đầy đủ + prompt Veo mẫu: `references/*.md`. Dùng khi PHẢI VIẾT MỚI prompts.md (đã có prompts.md chuẩn → dán nguyên văn, không sáng tác lại).
 
@@ -378,3 +472,207 @@ Nhân vật lặp lại → Subject Y HỆT giữa các prompt hoặc ingredient
 1. Tải 480p: `python -m yt_dlp -f "mp4[height<=480]/best[height<=480]/best" --no-playlist --restrict-filenames -o "<ten>.%(ext)s" "ytsearch1:<tên ad> official commercial"`.
 2. agy xem từng file (Phần F, 1 file/lượt, timeout 150s, song song bằng `&`), rubric 4 phần: TONG QUAN (timestamp theo H1) · BOC TACH TUNG CANH (9 thành phần + Line nguyên văn) · VIET LAI PROMPT VEO 8s/cảnh (tiếng Anh) · VI SAO HIEU QUA (3–5 nguyên tắc). Chốt "If you truly cannot see the pixels, reply CANNOT SEE".
 3. grep "CANNOT SEE" kiểm; xóa preamble rác. Distill: nguyên tắc mới → H3, pattern mới → H2 (patch skill qua `skill_manage`). Phân tích thô lưu ngoài skill (thư mục job).
+
+## H5. Template prompts.md — Copy & Fill (3 loại phổ biến)
+
+### Template 1: Quảng cáo sản phẩm (40s = 5 cảnh × 8s)
+```
+# Cảnh 1 — HOOK
+Time: [thời điểm tạo tương phản].
+Camera: close-up, tĩnh.
+Subject: [vật thể bất thường/tương phản gây tò mò].
+Action: [hành động gây shock nhẹ, dừng scroll].
+Location: [bối cảnh liên quan sản phẩm].
+Lighting: [dramatic, tương phản cao].
+Visual Style: cinematic, vibrant. No dialogue.
+Voice Tone: none
+
+# Cảnh 2 — SETUP
+Time: [tiếp nối cảnh 1].
+Camera: medium shot, dolly-back.
+Subject: [nhân vật/người dùng + vấn đề].
+Action: [thể hiện pain point].
+Location: [bối cảnh đời thường].
+Lighting: [tự nhiên, hơi u tối].
+Visual Style: cinematic, muted colors. No dialogue.
+Voice Tone: none
+
+# Cảnh 3 — DEMO
+Time: [tiếp nối].
+Camera: tracking shot.
+Subject: [sản phẩm in action].
+Action: [sản phẩm giải quyết vấn đề, demo tính năng chính].
+Location: [cùng bối cảnh, sáng hơn].
+Lighting: [ấm, tích cực].
+Visual Style: cinematic, warm tones, product focus. No dialogue.
+Voice Tone: none
+
+# Cảnh 4 — CLIMAX
+Time: [tiếp nối].
+Camera: slow-motion, dolly-out wide.
+Subject: [kết quả wow / biến đổi].
+Action: [reveal kết quả, reaction shot].
+Location: [mở rộng không gian].
+Lighting: [rực rỡ, golden hour].
+Visual Style: cinematic, saturated, epic. No dialogue.
+Voice Tone: none
+
+# Cảnh 5 — CTA/PACKSHOT
+Time: [tĩnh lặng sau cao trào].
+Camera: close-up, tĩnh, slow-motion.
+Subject: [sản phẩm + logo trên nền brand color].
+Action: [sản phẩm đặt tĩnh, hiệu ứng ánh sáng nhẹ].
+Location: [studio/nền đơn sắc].
+Lighting: [soft, studio].
+Visual Style: clean, minimal, product photography. No dialogue.
+Voice Tone: none
+```
+
+### Template 2: Phim ngắn hoạt hình (30s = 4 cảnh × 8s, không thoại)
+```
+# Cảnh 1 — Establishing + Hook
+Time: [thời điểm].
+Camera: wide shot, slowly push in.
+Subject: [nhân vật chính — mô tả chi tiết ngoại hình, trang phục].
+Action: [hành động giới thiệu + chi tiết bất thường gây tò mò].
+Location: [thế giới câu chuyện — mô tả chi tiết].
+Lighting: [phù hợp mood — mô tả cụ thể].
+Visual Style: 3D animation, Pixar style, ray tracing, vibrant. No dialogue.
+Voice Tone: none
+
+# Cảnh 2 — Development
+Time: [tiếp nối cảnh 1].
+Camera: medium shot, tracking theo nhân vật.
+Subject: [Y HỆT cảnh 1].
+Action: [nhân vật khám phá/gặp vật thể/bắt đầu nhiệm vụ].
+Location: [cùng/kế bối cảnh cảnh 1].
+Lighting: [thay đổi nhẹ phản ánh mood mới].
+Visual Style: 3D animation, Pixar style, ray tracing, vibrant. No dialogue.
+Voice Tone: none
+
+# Cảnh 3 — Climax
+Time: [tiếp nối].
+Camera: close-up, slow-motion tại khoảnh khắc đỉnh.
+Subject: [Y HỆT cảnh 1].
+Action: [khoảnh khắc cao trào — biến đổi/thành công/bất ngờ lớn].
+Location: [mở rộng không gian, tương phản với cảnh 1].
+Lighting: [dramatic — rực rỡ hoặc tối tương phản].
+Visual Style: 3D animation, Pixar style, ray tracing, epic, vibrant. No dialogue.
+Voice Tone: none
+
+# Cảnh 4 — Resolution
+Time: [lắng đọng sau cao trào].
+Camera: wide shot, slowly pull out.
+Subject: [Y HỆT cảnh 1].
+Action: [nhân vật thể hiện cảm xúc cuối — vui/bình yên/hài lòng].
+Location: [quay về bối cảnh ban đầu, nhưng đã thay đổi].
+Lighting: [ấm áp, golden hour].
+Visual Style: 3D animation, Pixar style, ray tracing, warm, peaceful. No dialogue.
+Voice Tone: none
+```
+
+**Ví dụ đã fill (Pixar robot phiêu lưu):**
+```
+# Cảnh 1 — Establishing + Hook
+Time: golden hour, late afternoon.
+Camera: wide shot, slowly push in.
+Subject: a small rusty robot with big round glowing blue eyes, dented metal body, a bent antenna on its head, covered in dust and moss patches.
+Action: the robot sits alone atop a towering pile of scrap metal in an endless junkyard, tilting its head curiously at a single glowing flower growing from the debris.
+Location: a vast post-apocalyptic junkyard stretching to the horizon, mountains of crushed cars and twisted metal, a faint orange sky above.
+Lighting: warm golden hour sunlight filtering through hazy clouds, long dramatic shadows across the junk piles, rim light on the robot's silhouette.
+Visual Style: 3D animation, Pixar style, ray tracing, vibrant. No dialogue.
+Voice Tone: none
+```
+
+### Template 3: Video giới thiệu MC (60s = 8 cảnh, có thoại)
+```
+# Cảnh 1 — Hook + MC xuất hiện
+Time: [thời điểm].
+Camera: close-up, tĩnh.
+Subject: [tên MC, mô tả ngoại hình chi tiết, trang phục — Y HỆT mọi cảnh].
+Action: [MC nhìn ống kính, cười, bắt đầu nói].
+Location: [bối cảnh liên quan sản phẩm/chủ đề].
+Lighting: [studio hoặc tự nhiên — mô tả cụ thể].
+Visual Style: cinematic, professional. Dialogue.
+Line: "[Câu hook gây tò mò, ≤25 chữ — VD: Bạn có biết 90% người dùng đang bỏ lỡ thứ này không?]"
+Voice Tone: [mô tả giọng: trẻ/trầm/vui, tốc độ nhanh/chậm, cảm xúc — VD: giọng nam trẻ, năng động, tốc độ vừa, hơi bí ẩn]
+
+# Cảnh 2 — Setup vấn đề
+Time: [tiếp nối].
+Camera: medium shot, dolly-back nhẹ.
+Subject: [Y HỆT cảnh 1].
+Action: [MC đi bộ/di chuyển, tay chỉ hoặc cầm sản phẩm, nói tiếp].
+Location: [mở rộng bối cảnh — thấy được không gian xung quanh].
+Lighting: [Y HỆT hoặc tương tự cảnh 1].
+Visual Style: cinematic, professional. Dialogue.
+Line: "[Nêu vấn đề/pain point, ≤25 chữ]"
+Voice Tone: [Y HỆT cảnh 1]
+
+# Cảnh 3 — Tính năng 1
+Time: [tiếp nối].
+Camera: over-the-shoulder, focus sản phẩm/demo.
+Subject: [Y HỆT cảnh 1].
+Action: [MC demo tính năng đầu tiên — cầm/chỉ/thao tác].
+Location: [phù hợp demo — bàn/studio/ngoài trời].
+Lighting: [sáng rõ, product-focused].
+Visual Style: cinematic, professional. Dialogue.
+Line: "[Giới thiệu tính năng 1, ≤25 chữ]"
+Voice Tone: [Y HỆT cảnh 1, thêm hào hứng]
+
+# Cảnh 4 — Tính năng 2
+Time: [tiếp nối].
+Camera: medium close-up, tĩnh hoặc pan nhẹ.
+Subject: [Y HỆT cảnh 1].
+Action: [MC demo tính năng thứ hai — so sánh trước/sau hoặc kết quả].
+Location: [cùng hoặc chuyển bối cảnh mới].
+Lighting: [Y HỆT hoặc tương tự cảnh 3].
+Visual Style: cinematic, professional. Dialogue.
+Line: "[Giới thiệu tính năng 2, ≤25 chữ]"
+Voice Tone: [Y HỆT cảnh 1]
+
+# Cảnh 5 — Social proof / Kết quả
+Time: [tiếp nối].
+Camera: wide shot, reveal không gian rộng.
+Subject: [Y HỆT cảnh 1].
+Action: [MC chỉ ra kết quả / bằng chứng / con số ấn tượng].
+Location: [không gian mở, gợi ý quy mô].
+Lighting: [tự nhiên, sáng].
+Visual Style: cinematic, professional. Dialogue.
+Line: "[Social proof hoặc kết quả, ≤25 chữ]"
+Voice Tone: [Y HỆT cảnh 1, tự tin]
+
+# Cảnh 6 — Xử lý phản đối
+Time: [tiếp nối].
+Camera: close-up, MC nhìn ống kính.
+Subject: [Y HỆT cảnh 1].
+Action: [MC giơ tay/lắc đầu nhẹ, rồi gật — xử lý phản đối phổ biến].
+Location: [studio hoặc cùng bối cảnh].
+Lighting: [ấm, gần gũi].
+Visual Style: cinematic, professional. Dialogue.
+Line: "[Xử lý phản đối, ≤25 chữ — VD: Nhiều người nghĩ quá đắt. Nhưng thực ra chỉ bằng ly cà phê mỗi ngày.]"
+Voice Tone: [Y HỆT cảnh 1, chân thành]
+
+# Cảnh 7 — Urgency / Scarcity
+Time: [tiếp nối].
+Camera: medium shot, MC bước tới gần ống kính.
+Subject: [Y HỆT cảnh 1].
+Action: [MC giơ tay đếm/chỉ, tạo cảm giác cấp bách].
+Location: [cùng bối cảnh, hơi zoom in].
+Lighting: [tăng contrast nhẹ, dramatic hơn].
+Visual Style: cinematic, professional. Dialogue.
+Line: "[Urgency/scarcity, ≤25 chữ — VD: Chỉ còn 50 suất ưu đãi tuần này.]"
+Voice Tone: [Y HỆT cảnh 1, gấp gáp hơn]
+
+# Cảnh 8 — CTA
+Time: [tĩnh lặng].
+Camera: close-up, tĩnh.
+Subject: [Y HỆT cảnh 1 + sản phẩm/logo trên tay hoặc bên cạnh].
+Action: [MC cười, nói câu CTA, giơ sản phẩm hoặc chỉ xuống link].
+Location: [studio/nền brand color].
+Lighting: [soft, ấm].
+Visual Style: clean, professional, product focus. Dialogue.
+Line: "[CTA ngắn gọn, ≤20 chữ — VD: Tải app ngay — link ở dưới!]"
+Voice Tone: [Y HỆT cảnh 1, thêm tự tin, kết thúc dứt khoát]
+```
+
+**Fill rule:** thay `[...]` bằng nội dung brief. Giữ nguyên format tiền tố + xuống dòng. Rà H3 checklist trước khi chốt.

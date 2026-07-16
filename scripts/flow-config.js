@@ -2,6 +2,7 @@
 // Usage: node flow-config.js <projectId> [model] [aspect] [count] [duration]
 // Defaults: model="Lite [Lower Priority]" aspect="9:16" count="x4" duration="8"
 const pw = require('playwright-core');
+const lib = require('./flow-lib');
 
 const [, , projectId, modelArg, aspectArg, countArg, durArg] = process.argv;
 const MODEL = modelArg || 'Lower Priority';
@@ -10,7 +11,7 @@ const COUNT = countArg || 'x4';
 const DUR = (durArg || '8') + '';
 
 (async () => {
-  const browser = await pw.chromium.connectOverCDP('http://127.0.0.1:9666');
+  const browser = await pw.chromium.connectOverCDP(lib.CDP);
   const ctx = browser.contexts()[0];
   let page = projectId ? ctx.pages().find(p => p.url().includes(`/project/${projectId}`)) : null;
   if (!page) page = ctx.pages().find(p => p.url().includes('labs.google/fx'));

@@ -7,7 +7,7 @@ const lib = require('./flow-lib');
 
 const [, , scenesPath, reportPath] = process.argv;
 if (!scenesPath) { console.error('USAGE: node flow-fire-char.js <scenes.json> [report.json]'); process.exit(1); }
-const spec = JSON.parse(fs.readFileSync(scenesPath, 'utf8'));
+const spec = JSON.parse(fs.readFileSync(scenesPath, 'utf8').replace(/^\uFEFF/, ''));
 const REPORT = reportPath || 'tools/last-fire-char-report.json';
 
 async function ingredientCount(page) {
@@ -20,48 +20,16 @@ async function ingredientCount(page) {
   });
 }
 
-async function clickAt(page, scope, needle) {
-  const pt = await page.evaluate(([sc, n]) => {
-    const root = sc === 'dialog' ? document.querySelector('[role="dialog"]') : document;
-    if (!root) return null;
-    const els = [...root.querySelectorAll('button, [role="button"], [role="tab"], [role="option"], div, span')];
-    const cand = els.filter(e => {
-      const t = (e.innerText || e.getAttribute('aria-label') || '').trim();
-      return t === n || (t.includes(n) && t.length < n.length + 30);
-    });
-    const b = cand.sort((a, c) => (a.innerText || '').length - (c.innerText || '').length)[0];
-    if (!b) return null;
-    b.scrollIntoView({ block: 'center' });
-    const r = b.getBoundingClientRect();
-    if (!r.width || !r.height) return null;
-    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-  }, [scope, needle]);
-  if (!pt) return false;
-  await page.mouse.click(pt.x, pt.y);
-  return true;
-}
-
-async function pollUntil(page, fn, timeoutMs, stepMs) {
-  const deadline = Date.now() + timeoutMs;
-  let v;
-  while (Date.now() < deadline) {
-    v = await fn();
-    if (v) return v;
-    await page.waitForTimeout(stepMs || 200);
-  }
-  return v;
-}
-
 async function attachIngredient(page, name) {
   if (!(await page.locator('[role="dialog"]').count())) {
-    if (!(await clickAt(page, 'page', 'add_2'))) { console.log('NO_ADD_BTN'); return 0; }
+    if (!(await lib.clickByLocator(page, 'page', 'add_2'))) { console.log('NO_ADD_BTN'); return 0; }
     try { await page.locator('[role="dialog"]').waitFor({ timeout: 8000 }); } catch (_) { console.log('NO_DIALOG_AFTER_ADD'); return 0; }
   }
 
-  await clickAt(page, 'dialog', 'Nhân vật');
+  await lib.clickByLocator(page, 'dialog', 'Nhân vật');
 
   // Item co the chua render ngay sau khi doi tab — retry click theo dieu kien.
-  const clicked = await pollUntil(page, () => clickAt(page, 'dialog', name), 8000);
+  const clicked = await lib.pollUntil(page, () => lib.clickByLocator(page, 'dialog', name), 8000);
   if (!clicked) {
     console.log('DIALOG_NO_ITEM');
     await page.keyboard.press('Escape');
@@ -69,15 +37,15 @@ async function attachIngredient(page, name) {
   }
 
   // Click item DA add chip; chi bam "Thêm vào câu lệnh" khi chip chua xuat hien (tranh double ingredient).
-  let chips = await pollUntil(page, () => ingredientCount(page), 4000, 150);
+  let chips = await lib.pollUntil(page, () => ingredientCount(page), 4000, 150);
   if (!chips) {
-    await clickAt(page, 'dialog', 'Thêm vào câu lệnh');
-    chips = await pollUntil(page, () => ingredientCount(page), 4000, 150);
+    await lib.clickByLocator(page, 'dialog', 'Thêm vào câu lệnh');
+    chips = await lib.pollUntil(page, () => ingredientCount(page), 4000, 150);
   }
 
   // Dialog khong tu dong khi bo qua nut them → Escape ngay, chi cho no bien mat.
   if (await page.locator('[role="dialog"]').count()) await page.keyboard.press('Escape');
-  await pollUntil(page, async () => !(await page.locator('[role="dialog"]').count()), 3000, 150);
+  await lib.pollUntil(page, async () => !(await page.locator('[role="dialog"]').count()), 3000, 150);
   return chips || 0;
 }
 

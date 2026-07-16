@@ -7,7 +7,7 @@ const lib = require('./flow-lib');
 
 const [, , scenesPath, reportPath] = process.argv;
 if (!scenesPath) { console.error('USAGE: node flow-fire.js <scenes.json> [report.json]'); process.exit(1); }
-const spec = JSON.parse(fs.readFileSync(scenesPath, 'utf8'));
+const spec = JSON.parse(fs.readFileSync(scenesPath, 'utf8').replace(/^\uFEFF/, ''));
 const REPORT = reportPath || 'tools/last-fire-report.json';
 
 (async () => {

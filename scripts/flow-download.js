@@ -3,6 +3,7 @@
 // idsFile: JSON array editId — chi tai dung cac clip nay (job song song khong dinh clip la).
 // Lay src truc tiep tu grid (media.getMediaUrlRedirect), fetch bang cookie cua browser.
 const pw = require('playwright-core');
+const lib = require('./flow-lib');
 const fs = require('fs');
 const path = require('path');
 
@@ -13,7 +14,7 @@ const WANT = idsFile ? new Set(JSON.parse(fs.readFileSync(idsFile, 'utf8'))) : n
 const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : null;
 
 (async () => {
-  const browser = await pw.chromium.connectOverCDP('http://127.0.0.1:9666');
+  const browser = await pw.chromium.connectOverCDP(lib.CDP);
   const ctx = browser.contexts()[0];
   let page = ctx.pages().find(p => p.url().includes(`/project/${projectId}`));
   if (!page) {

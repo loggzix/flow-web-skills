@@ -1,12 +1,14 @@
 const pw = require('playwright-core');
+const lib = require('./flow-lib');
 const fs = require('fs');
 
-const [, , descPath, voiceName, outWav] = process.argv;
-const CHAR_URL = 'https://labs.google/fx/vi/tools/flow/project/4660f586-d329-48dc-8a1a-3e44234fe0d1/character/1a311aaa-87cc-4d2c-92b8-11aaadb27454';
+const [, , descPath, voiceName, outWav, charUrl] = process.argv;
+// CHARACTER_URL: pass as 4th arg, or falls back to hardcoded default (Long's test project).
+const CHAR_URL = charUrl || 'https://labs.google/fx/vi/tools/flow/project/4660f586-d329-48dc-8a1a-3e44234fe0d1/character/1a311aaa-87cc-4d2c-92b8-11aaadb27454';
 const SAMPLE = 'Anh ngủ chưa? Em chỉ muốn chúc anh ngủ ngon thôi, mong anh có một giấc mơ thật đẹp nhé.';
 
 (async () => {
-  const browser = await pw.chromium.connectOverCDP('http://127.0.0.1:9666');
+  const browser = await pw.chromium.connectOverCDP(lib.CDP);
   const ctx = browser.contexts()[0];
   const page = ctx.pages().find(p => p.url().includes('labs.google')) || ctx.pages()[0] || await ctx.newPage();
   try {
