@@ -104,21 +104,13 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
   // Resolution config from env (default 1080p, supported: 720p, 1080p, 4k)
   const RESOLUTION = process.env.FLOW_RESOLUTION || '1080p';
   const CONCURRENCY = 4; // Right-click download needs lower concurrency to avoid DOM menu race/overlap
-
-  let upscaleWaitDone = false;
+  const pendingUpscaleJobs = [];
 
   async function worker() {
     let job;
     while ((job = jobs.shift())) {
       const editId = editIdOf(job);
       if (!editId) continue;
-
-      // Smart wait: delay 45s before starting second-pass downloads for upscaled files
-      if (job.needsUpscaleWait && !upscaleWaitDone) {
-        console.log('[DL] Pausing for 45 seconds to let Google Flow finish upscaling...');
-        await page.waitForTimeout(45000);
-        upscaleWaitDone = true;
-      }
 
       const file = path.join(outDir, `video_${String(job.n).padStart(2, '0')}_${editId.slice(0, 8)}.mp4`);
       
@@ -132,9 +124,16 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
           continue;
         }
 
-        // Right-click target video via dispatchEvent to bypass visibility checks
+        // Right-click target video via dispatchEvent at the center coordinates (matches extension exactly)
         await video.scrollIntoViewIfNeeded({ timeout: 8000 }).catch(() => {});
-        await video.evaluate(el => el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })));
+        await video.evaluate(el => {
+          const rect = el.getBoundingClientRect();
+          const cx = rect.left + rect.width / 2;
+          const cy = rect.top + rect.height / 2;
+          el.dispatchEvent(new MouseEvent('contextmenu', {
+            bubbles: true, cancelable: true, clientX: cx, clientY: cy, button: 2
+          }));
+        });
         
         // Wait for Radix context menu to appear
         const menu = page.locator('[role="menu"]').first();
@@ -227,7 +226,7 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
             }
             // Mark job as pending upscale so we can download it in second pass
             job.needsUpscaleWait = true;
-            jobs.push(job); // push back to queue to retry downloading later
+            pendingUpscaleJobs.push(job); // push to temporary queue for second pass
             clicked = true;
           } else {
             const download = await downloadPromise;
@@ -260,6 +259,17 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
     }
   }
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, jobs.length) }, worker));
+
+  // --- SECOND PASS: Download upscaled videos after waiting ---
+  if (pendingUpscaleJobs.length > 0) {
+    console.log(`[DL] Triggered upscale for ${pendingUpscaleJobs.length} clips. Pausing 50s for server render...`);
+    await page.waitForTimeout(50000);
+    // Push pending jobs back to main queue
+    jobs.push(...pendingUpscaleJobs);
+    // Run second pass download
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, jobs.length) }, worker));
+  }
+
   flushManifest();
   const total = fs.readdirSync(outDir).filter(f => /^video_\d+_[0-9a-f]{8}\.mp4$/.test(f)).length;
   console.log(`DONE saved=${results.length} (tong ${total} tren dia) fail=${fail} dir=${outDir}`);
