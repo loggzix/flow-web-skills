@@ -145,30 +145,30 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
           await page.waitForTimeout(200);
         }
 
-        // Find the video element directly inside the edit link
-        const video = anchor.locator('video').first();
+        // Find the media element (video or image thumbnail) directly inside the edit link
+        const media = anchor.locator('video, img').first();
 
-        if (!(await video.count())) {
-          console.log(`FAIL ${job.n}: No video element found for ${editId.slice(0, 8)} (DOM not ready)`);
+        if (!(await media.count())) {
+          console.log(`FAIL ${job.n}: No media element (video/img) found for ${editId.slice(0, 8)}`);
           fail++;
           continue;
         }
 
-        // Wait for video src to be fully loaded (not empty or placeholder)
+        // Wait for media src to be ready
         const srcReady = await lib.pollUntil(page, async () => {
-          const src = await video.getAttribute('src').catch(() => '');
-          return src && (src.startsWith('/fx/') || src.startsWith('blob:') || src.startsWith('http'));
+          const src = await media.getAttribute('src').catch(() => '');
+          return src && (src.startsWith('/fx/') || src.startsWith('blob:') || src.startsWith('http') || src.includes('googleusercontent'));
         }, 8000, 200);
 
         if (!srcReady) {
-          console.log(`FAIL ${job.n}: Video src is not ready/loaded for ${editId.slice(0, 8)}`);
+          console.log(`FAIL ${job.n}: Media src is not ready/loaded for ${editId.slice(0, 8)}`);
           fail++;
           continue;
         }
 
-        // Right-click target video via dispatchEvent at the center coordinates (matches extension exactly)
-        await video.scrollIntoViewIfNeeded({ timeout: 8000 }).catch(() => {});
-        await video.evaluate(el => {
+        // Right-click target media via dispatchEvent at the center coordinates
+        await media.scrollIntoViewIfNeeded({ timeout: 8000 }).catch(() => {});
+        await media.evaluate(el => {
           const rect = el.getBoundingClientRect();
           const cx = rect.left + rect.width / 2;
           const cy = rect.top + rect.height / 2;
