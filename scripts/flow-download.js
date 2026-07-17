@@ -306,9 +306,10 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
           }
         }
 
-        // Escape if menu still open
+        // Escape and click empty space to ensure menu is fully closed before next job
         await page.keyboard.press('Escape').catch(() => {});
-        await page.waitForTimeout(150);
+        await page.mouse.click(10, 10).catch(() => {});
+        await page.waitForTimeout(200);
 
         if (!clicked) {
           console.log(`FAIL ${job.n}: No available resolution matched for ${RESOLUTION}`);
