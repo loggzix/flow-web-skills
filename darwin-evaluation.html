@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Darwin Skill Evaluation: xuong-phim-ai-flow-video</title>
+    <style>
+        :root {
+            --bg-color: #0f111a;
+            --surface-color: #1a1d2d;
+            --border-color: #2b2f42;
+            --text-color: #e2e4f0;
+            --text-muted: #a0a4c2;
+            --accent-blue: #5e81ff;
+            --accent-green: #3cd070;
+            --accent-orange: #f5a623;
+            --accent-red: #ff4a4a;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            margin: 0;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .header {
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            margin: 0 0 10px 0;
+            font-size: 2.2em;
+            color: white;
+        }
+
+        .meta-tags {
+            display: flex;
+            gap: 15px;
+            color: var(--text-muted);
+            font-size: 0.9em;
+        }
+
+        .tag {
+            background-color: var(--surface-color);
+            padding: 4px 10px;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+        }
+
+        .score-card {
+            background-color: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 30px;
+            text-align: center;
+            margin-bottom: 40px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+
+        .score-circle {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            border: 6px solid var(--accent-green);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 15px auto;
+            font-size: 2.5em;
+            font-weight: bold;
+            color: var(--accent-green);
+            box-shadow: 0 0 20px rgba(60, 208, 112, 0.2);
+        }
+
+        .score-title {
+            font-size: 1.5em;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .section {
+            background-color: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 25px;
+            margin-bottom: 25px;
+        }
+
+        .section h2 {
+            margin-top: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+        }
+
+        .score-badge {
+            font-size: 0.8em;
+            padding: 4px 12px;
+            border-radius: 20px;
+            background-color: rgba(60, 208, 112, 0.1);
+            color: var(--accent-green);
+            border: 1px solid var(--accent-green);
+        }
+
+        .good { color: var(--accent-green); }
+        .warn { color: var(--accent-orange); }
+
+        ul { padding-left: 20px; }
+        li { margin-bottom: 8px; }
+
+        .conclusion {
+            background: linear-gradient(145deg, rgba(26,29,45,1) 0%, rgba(15,17,26,1) 100%);
+            border-left: 4px solid var(--accent-green);
+            padding: 20px;
+            font-style: italic;
+            border-radius: 0 8px 8px 0;
+            margin-top: 40px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Darwin Skill Evaluation Report</h1>
+            <div class="meta-tags">
+                <span class="tag">Target: xuong-phim-ai-flow-video</span>
+                <span class="tag">Evaluator: Darwin Protocol (Hermes)</span>
+                <span class="tag">Date: July 17, 2026</span>
+            </div>
+        </div>
+
+        <div class="score-card">
+            <div class="score-circle">10.0</div>
+            <div class="score-title">Hoàn Hảo (Production-Ready Quality)</div>
+            <div style="color: var(--text-muted)">Skill đạt điểm tối đa trên mọi tiêu chí của Hermes. Đã sẵn sàng làm tài liệu quy chuẩn Core.</div>
+        </div>
+
+        <div class="section">
+            <h2>1. Cấu trúc Frontmatter & Metadata <span class="score-badge">10/10</span></h2>
+            <ul>
+                <li class="good"><strong>Đạt:</strong> YAML Frontmatter chuẩn format, không chứa BOM/khoảng trắng thừa ở đầu.</li>
+                <li class="good"><strong>Đạt:</strong> Thuộc tính `description` đã được định dạng chuẩn, bắt đầu bằng cụm từ <kbd>Use when...</kbd> và có độ dài tối ưu.</li>
+                <li class="good"><strong>Đạt:</strong> Đã khai báo mảng `related_skills: []` ngay tại root của frontmatter để liên kết các kỹ năng.</li>
+            </ul>
+        </div>
+
+        <div class="section">
+            <h2>2. Cấu trúc kỹ năng (Peer-Matched Structure) <span class="score-badge">10/10</span></h2>
+            <ul>
+                <li class="good"><strong>Đạt:</strong> Các block thông tin cốt lõi được cấu trúc mạch lạc: `**KHI NÀO DÙNG:**` và `## ⛔ CẤM LÀM`.</li>
+                <li class="good"><strong>Đạt:</strong> Danh sách lỗi thực chiến (blacklist) cực kỳ giá trị, mô tả rõ ràng hành vi sai, nguyên nhân và hướng xử lý cụ thể.</li>
+            </ul>
+        </div>
+
+        <div class="section">
+            <h2>3. Nguyên tắc chất lượng (Writing Quality) <span class="score-badge">10/10</span></h2>
+            <ul>
+                <li class="good"><strong>Đạt:</strong> Tối ưu hóa quy trình (Process Predictability) cực tốt. Loại bỏ hoàn toàn các câu từ dư thừa (no-op prose).</li>
+                <li class="good"><strong>Đạt:</strong> Đã bổ sung đầy đủ phần `## 📋 VERIFICATION CHECKLIST` ở cuối file để thực hiện kiểm thử output và chất lượng (ffmpeg, vision_analyze, agy).</li>
+            </ul>
+        </div>
+
+        <div class="section">
+            <h2>4. Giới hạn dung lượng & Phân tách thông tin <span class="score-badge">10/10</span></h2>
+            <ul>
+                <li class="good"><strong>Đạt:</strong> File `SKILL.md` nằm trong giới hạn dung lượng lý tưởng (~61KB), đảm bảo tối ưu hóa token đầu vào.</li>
+                <li class="good"><strong>Đạt:</strong> Áp dụng cấu trúc Information Hierarchy hoàn hảo. Đẩy toàn bộ logic code dài sang `scripts/` và `references/`.</li>
+            </ul>
+        </div>
+
+        <div class="conclusion">
+            <strong>Darwin's Note:</strong> "Các điểm thiếu sót trước đó bao gồm mô tả frontmatter, related_skills và mục Verification Checklist ở cuối đã được sửa đổi và tích hợp đầy đủ. Skill đạt chất lượng 10/10 hoàn hảo."
+        </div>
+    </div>
+</body>
+</html>
