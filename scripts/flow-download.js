@@ -166,9 +166,9 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
           continue;
         }
 
-        // Right-click target media via Playwright native click (guarantees context menu opens at correct location)
+        // Right-click target media via Playwright native click with force:true (bypasses hit-test button wrappers)
         await media.scrollIntoViewIfNeeded({ timeout: 8000 }).catch(() => {});
-        await media.click({ button: 'right', timeout: 8000 });
+        await media.click({ button: 'right', timeout: 8000, force: true });
         
         // Wait for Radix context menu to appear
         const menu = page.locator('[role="menu"]').first();
