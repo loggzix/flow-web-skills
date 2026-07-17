@@ -262,8 +262,8 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
 
   // --- SECOND PASS: Download upscaled videos after waiting ---
   if (pendingUpscaleJobs.length > 0) {
-    console.log(`[DL] Triggered upscale for ${pendingUpscaleJobs.length} clips. Pausing 50s for server render...`);
-    await page.waitForTimeout(50000);
+    console.log(`[DL] Triggered upscale for ${pendingUpscaleJobs.length} clips. Pausing 90s for server render...`);
+    await page.waitForTimeout(90000);
     // Push pending jobs back to main queue
     jobs.push(...pendingUpscaleJobs);
     // Run second pass download
