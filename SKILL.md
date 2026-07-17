@@ -10,7 +10,6 @@ metadata:
   hermes:
     tags: [video, google-flow, veo, cdp, playwright, content-creation]
     related_skills: [darwin-skill, ascii-video, youtube-content]
-  related_skills: []
 ---
 
 # Skill: Xưởng Phim AI — Làm video bằng Google Flow (Veo)
@@ -140,7 +139,7 @@ node flow-job.js <scenes.json> <outDir>  # fire → poll → download trọn job
 - Chữ Việt có dấu → overlay CapCut. Số/tiếng Anh ngắn Flow sinh được.
 
 ## BƯỚC 5 — CONFIG FLOW
-- **Config mặc định của Long:** Thành phần · 9:16 · x4 · Veo 3.1 - Lite [Lower Priority] (0 tín dụng) · 8s. TRỪ khi brief job yêu cầu khác (quảng cáo ngang → 16:9). Bám brief trước, mặc định sau.
+- **Config mặc định của Long:** Thành phần · 9:16 · x2 · Veo 3.1 - Lite [Lower Priority] (0 tín dụng) · 8s. TRỪ khi brief job yêu cầu khác (quảng cáo ngang → 16:9). Bám brief trước, mặc định sau.
 - **Lệnh nhanh:** `node flow-config.js <projectId>` → verify `CHIP_AFTER:` khớp expectConfig.
 - B-roll = Khung hình (frame đầu = ảnh đã xử lý). MC/talking = Thành phần + nhân vật + ảnh HERO.
 - **⚠️ Job TRỘN B-roll + MC trong cùng project → GOM CẢNH THEO CHẾ ĐỘ, đừng đan xen.** Fire hết nhóm Khung hình (`flow-fire-frame.js`) → real-click đổi tab Thành phần → verify chip → fire nhóm MC (`flow-fire-char.js`). Mỗi lô fire chỉ 1 chế độ; quên đổi tab → cảnh MC rơi về text-to-video, MẤT mặt nhân vật.
@@ -160,7 +159,7 @@ node flow-job.js <scenes.json> <outDir>  # fire → poll → download trọn job
 ## BƯỚC 7 — BÀN GIAO
 - Output lưu `output/` + `README_output.md` map file↔cảnh. Nhắc hậu kỳ CapCut: dub/voice theo Line, overlay chữ Việt + logo, color grading, cắt theo beat.
 - **Checklist bàn giao:**
-  1. Đếm mp4 = số cảnh × multiplier (x4 = 4 clip/cảnh) — thiếu → re-fire hoặc download bù.
+  1. Đếm mp4 = số cảnh × multiplier (x2 = 2 clip/cảnh) — thiếu → re-fire hoặc download bù.
   2. `ffprobe -v error -show_entries format=duration` mỗi file — đảm bảo đủ 8s (hoặc 4/6/10s tùy config).
   3. `README_output.md` có map file↔cảnh + prompt gốc + config + ngày gen.
   4. Báo Long: số clip, tổng thời lượng, model đã dùng, link/path output.
@@ -196,7 +195,7 @@ Chip config bottom bar (`🍌 model | crop | Nx`) → menu 2 tab đầu **Hình 
      editor.onChange();
      ```
 - **Model** (dropdown `arrow_drop_down` → `[role=menuitem]`): Omni Flash · Veo 3.1 - Lite / Fast / Quality / Lite [Lower Priority]. Đều kèm audio.
-- **Tỉ lệ:** 9:16 / 16:9. **Số lượng:** 1x–4x; **x4 = 4 edit id RIÊNG** = 4 request riêng/cảnh. **Thời lượng:** Omni Flash 4/6/8/10s; Veo 3.1 chỉ 4/6/8s.
+- **Tỉ lệ:** 9:16 / 16:9. **Số lượng:** 1x–4x; **x2 = 2 edit id RIÊNG** = 2 request riêng/cảnh. **Thời lượng:** Omni Flash 4/6/8/10s; Veo 3.1 chỉ 4/6/8s.
 
 ## BẢNG GIÁ TÍN DỤNG (mức 1x, đo 2026-07-03)
 | Model | 4s | 6s | 8s | 10s |
@@ -345,6 +344,7 @@ Nút `Tác nhân`: bật = thanh config biến mất, gãy selector. GIỮ TẮT
 
 | Triệu chứng | Fix một lệnh | Vẫn hỏng thì |
 |---|---|---|
+| Chrome CDP trỏ về trang login Google (`accounts.google.com`) | 🛑 DỪNG CỨNG — Chụp debug screenshot xác nhận, báo Long mở Chrome automation lên đăng nhập thủ công. | Không tự ý dùng Playwright nhập mật khẩu/vượt OAuth vì Google block automated sign-in. |
 | Slate.js editor không nhận text / Nút Tạo bị disable | Thao tác trực tiếp qua Slate React API: lấy `editor` từ `__reactProps*` của `[data-slate-editor=true]`, thiết lập `editor.selection = null`, rồi gọi `editor.insertText(prompt)` và `editor.onChange()`. **Lưu ý:** Khi truyền prompt qua CDP `Runtime.evaluate`, bắt buộc double-escape các ký tự xuống dòng (thành `\\n` hoặc `\\\\n`) để tránh lỗi `SyntaxError: Invalid or unexpected token` | Giả lập gửi KeyEvents (char) native qua CDP (nhập chậm nhưng chắc chắn React nhận) |
 | Video hiển thị = 0 / Không tìm thấy phần tử video sau khi render | Do tab "Xem video" chưa được chọn/chưa mount DOM. Tìm tab chứa text "Xem video" và click programmatically để các thẻ video mount | Tải lại trang hoặc chuyển tab thủ công |
 | flow-download.js lỗi `TypeError: object is not iterable` | Do truyền file `fire-report.json` (dạng object) vào tham số `idsFile`. Script chỉ nhận JSON array (ví dụ `["id1", "id2"]`). | Trích xuất trường `unmatchedWorkflows` từ report ra file tạm chứa array sạch rồi truyền vào |
@@ -407,16 +407,16 @@ Hermes chạy 2 provider thật: `ikame` (Claude, proxy zegoplatform.ikameglobal
 
 | Script | Cú pháp | Việc |
 |---|---|---|
-| `flow-config.js` | `node flow-config.js <projectId> [model] [aspect] [count] [duration]` | Set config video (mặc định Video · Thành phần · Veo 3.1 Lite [Lower Priority] · 9:16 · x4 · 8s). In `CHIP_AFTER:` để verify. `DEBUG=1` soi menu. |
+| `flow-config.js` | `node flow-config.js <projectId> [model] [aspect] [count] [duration]` | Set config video (mặc định Video · Thành phần · Veo 3.1 Lite [Lower Priority] · 9:16 · x2 · 8s). In `CHIP_AFTER:` để verify. `DEBUG=1` soi menu. |
 | `flow-fire.js` | `node flow-fire.js <scenes.json> [report.json]` | Bơm N cảnh text-to-video LIÊN TIẾP không chờ render. Config lệch → exit 3. Report mặc định `last-fire-report.json`. |
 | `flow-fire-char.js` | `node flow-fire-char.js <char-scenes.json> [report.json]` | Fire N cảnh KÈM NHÂN VẬT (ingredient, chế độ Thành phần); tự gắn lại ingredient trước từng cảnh. |
 | `flow-fire-frame.js` | `node flow-fire-frame.js <frame-scenes.json> [report.json]` | Fire N cảnh chế độ KHUNG HÌNH (frame đầu); tự gắn lại frame trước từng cảnh. scenes.json: `{project, expectConfig, scenes:[{id, prompt, frame:"tên_file.jpg"}]}`. |
 | `flow-gen-frames.js` | `node flow-gen-frames.js <frames.json> [report]` | **BƯỚC 1 auto:** config image mode → attach ref ảnh khách → fire prompt gen frame → collect workflowIds. Input: `{project, scenes: [{id, refImage, prompt}]}`. Ref image phải upload trước. |
 | `flow-job.js` | `node flow-job.js <scenes.json> <outDir> [report]` | **Job trọn vẹn**: fire → poll nền (adaptive 15/30/45s) → download → đặt tên. **Async spawn** — không block. |
 | `flow-job-mixed.js` | `node flow-job-mixed.js <mixed.json> <outDir>` | **⭐ Job MIXED (frame+char):** tự chạy tuần tự Khung hình → Thành phần → poll → download. **Async spawn.** 1 lệnh cho toàn bộ job trộn chế độ. |
-| `flow-status.js` | `node flow-status.js <projectId> [listenSeconds=20]` | `bringToFront` rồi nghe poll render + đếm grid (cuộn virtualized). `NO_POLLS_EARLY`/`ALL_TERMINAL` = xong. |
-| `flow-download.js` | `node flow-download.js <projectId> <outDir> [maxCount] [idsFile]` | Gom video (cuộn-gom) tải song song 3 luồng + retry + `manifest.json`. `idsFile` = JSON array editId → chỉ tải đúng clip đó (an toàn job song song). **RESUME (2026-07-14): bỏ qua clip đã tải + ghi manifest tăng dần sau mỗi clip → terminal cắt giữa chừng thì chạy lại LỆNH Y HỆT để tải nốt, không mất manifest, không tải lại từ đầu.** |
-| `flow-job.js` | `node flow-job.js <scenes.json> <outDir> [report.json]` | **⭐ Chạy TRỌN job:** fire (tự chọn text/char theo spec) → poll đủ SUCCESSFUL → download → đặt tên theo cảnh; tự RE-FIRE cảnh thiếu 1 lần; nguồn chuẩn = editId từ fire response → an toàn chạy song song cùng project. outDir phải MỚI (còn .mp4 cũ → tự ABORT). **Mixed-mode (frame+char):** chạy 2 lần — `flow-fire-frame.js` cho nhóm Khung hình + `flow-fire-char.js` cho nhóm Thành phần → sau đó `flow-download.js` tải hết. |
+| `flow-status.js` | `node flow-status.js <projectId> [listenSeconds=20]` | `bringToFront` rồi nghe poll render + đếm grid. **Tối ưu:** tự động fallback quét DOM grid tìm clip xong (`NO_POLLS_GRID_FALLBACK`) sau 8s nếu server ngắt poll, cập nhật map đầy đủ. |
+| `flow-download.js` | `node flow-download.js <projectId> <outDir> [maxCount] [idsFile]` | Gom video (cuộn-gom) tải song song **8 luồng** (`CONCURRENCY=8`) + retry + `manifest.json`. `idsFile` = JSON array editId. **RESUME:** bỏ qua clip đã tải + ghi manifest tăng dần. |
+| `flow-job.js` | `node flow-job.js <scenes.json> <outDir> [report]` | **Job trọn vẹn**: fire → poll nền (adaptive 15/30/45s) → download → đặt tên. **Tối ưu:** timeout 15 phút, async spawn. |
 | `flow-voice.js` | `node flow-voice.js <descPath> <voiceName> <outWav> [charUrl]` | Tạo giọng custom + bắt audio Xem trước về wav. `charUrl` = URL trang nhân vật (mặc định: project test của Long). |
 
 `flow-lib.js` = code chung (connect CDP, tìm page, check chip, gõ prompt + fire, bắt request gen, tự chữa blank page); `flow-mytab.js` = helper page. Đừng gọi trực tiếp.
@@ -435,11 +435,11 @@ Hermes chạy 2 provider thật: `ikame` (Claude, proxy zegoplatform.ikameglobal
 
 ## Quy trình job chuẩn bằng runner
 1. `flow-config.js <projectId>` — ép config. Verify `CHIP_AFTER:`.
-2. Soạn `scenes.json`: `{project, expectConfig:["Video","crop_9_16","x4"], scenes:[{id, prompt}]}` — prompt DÁN NGUYÊN VĂN (giữ `\n`, format tiền tố BƯỚC 3). **Viết bằng write_file — BOM của PowerShell `Out-File` làm `JSON.parse` chết.**
+2. Soạn `scenes.json`: `{project, expectConfig:["Video","crop_9_16","x2"], scenes:[{id, prompt}]}` — prompt DÁN NGUYÊN VĂN (giữ `\n`, format tiền tố BƯỚC 3). **Viết bằng write_file — BOM của PowerShell `Out-File` làm `JSON.parse` chết.**
 3. `flow-job.js scenes.json <outDir>` chạy NỀN → song song làm việc khác → job báo xong thì verify (đếm clip + agy xem mẫu). Muốn tay từng bước: `flow-fire.js` → `flow-status.js` → `flow-download.js`.
 4. QC bulk: agy (Phần F).
 
-**Timing (đo 2026-07-04):** fire text ~1-4s/cảnh · fire-char ~1s/cảnh · render ~2-3 phút (song song server-side) · status kết luận ~8s khi xong · download 8 clip/~7s. Cap đồng thời: sau ~2 cảnh x4, cảnh kế chờ ~20-45s — runner tự chờ, không phải lỗi.
+**Timing (đo 2026-07-04):** fire text ~1-4s/cảnh · fire-char ~1s/cảnh · render ~2-3 phút (song song server-side) · status kết luận ~8s khi xong · download 8 clip/~7s. Cap đồng thời: sau ~2 cảnh x2, cảnh kế chờ ~20-45s — runner tự chờ, không phải lỗi.
 
 **⭐ TRÁNH XUNG ĐỘT KHI PULL SKILL MỚI (Vá 2026-07-17):**
 Khi `git pull` skill mới từ Git về máy, để tránh conflict với local changes tự phát sinh (như đổi file `SKILL.md` hoặc script status):
@@ -455,7 +455,7 @@ Khi `git pull` skill mới từ Git về máy, để tránh conflict với local
   ```json
   {
     "project": "a9e68afc-...",
-    "expectConfig": ["Video", "crop_9_16", "x4"],
+    "expectConfig": ["Video", "crop_9_16", "x2"],
     "scenes": [
       {"id": "scene_1", "prompt": "Time: ...\nCamera: ...", "frame": "san_pham_final.jpg"},
       {"id": "scene_2", "prompt": "Time: ...\nCamera: ...", "frame": "mc_hero_final.jpg"}
@@ -471,7 +471,7 @@ Khi `git pull` skill mới từ Git về máy, để tránh conflict với local
 - Menu config: tabs `[role=tab]`, model dropdown `arrow_drop_down` → `[role=menuitem]`. Real click Playwright mới ăn React.
 - Prompt: click `[data-slate-editor]` → Ctrl+A Delete → `keyboard.insertText` → nút `arrow_forward` cuối, chờ enabled.
 - Verify fire = hook `ctx.on('request')` lọc `batchAsyncGenerateVideo` (loại `Status`). Không cần chờ response/render.
-- Cap đồng thời: sau ~2 cảnh x4, cảnh kế chờ ~20-45s — runner tự chờ, không phải lỗi.
+- Cap đồng thời: sau ~2 cảnh x2, cảnh kế chờ ~20-45s — runner tự chờ, không phải lỗi.
 - Download: `<video>` grid có sẵn `src` → `ctx.request.get(src)` ăn cookie.
 - **⭐ Vá workflowId thiếu (response fire về muộn/miss — 2026-07-06):** grid sort mới→cũ → vị trí XA NHẤT của các workflowId ĐÃ BIẾT = biên "vùng tile mới"; tile unknown TRONG vùng = clip đợt này → mở `/edit/<id>` match prompt gán cảnh. **KHÔNG prompt-match ngoài vùng** — đợt cũ trùng prompt nguyên văn (blacklist #15). Cross-check: mọi id đã biết phải nằm gọn trong vùng.
 

@@ -1,13 +1,13 @@
 // flow-config.js — set config video mac dinh cho project Flow dang mo.
 // Usage: node flow-config.js <projectId> [model] [aspect] [count] [duration]
-// Defaults: model="Lite [Lower Priority]" aspect="9:16" count="x4" duration="8"
+// Defaults: model="Lite [Lower Priority]" aspect="9:16" count="x2" duration="8"
 const pw = require('playwright-core');
 const lib = require('./flow-lib');
 
 const [, , projectId, modelArg, aspectArg, countArg, durArg] = process.argv;
 const MODEL = modelArg || 'Lower Priority';
 const ASPECT = aspectArg || '9:16';
-const COUNT = countArg || 'x4';
+const COUNT = countArg || 'x2';
 const DUR = (durArg || '8') + '';
 
 (async () => {

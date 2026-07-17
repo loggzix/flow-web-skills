@@ -241,9 +241,9 @@ describe('checkConfig', () => {
   }
 
   it('returns ok=true when all tokens present', async () => {
-    const r = await lib.checkConfig(mockPage('Video · 8scrop_9_16x4'), ['Video', 'crop_9_16', 'x4']);
+    const r = await lib.checkConfig(mockPage('Video · 8scrop_9_16x2'), ['Video', 'crop_9_16', 'x2']);
     assert.equal(r.ok, true);
-    assert.equal(r.barText, 'Video · 8scrop_9_16x4');
+    assert.equal(r.barText, 'Video · 8scrop_9_16x2');
   });
 
   it('returns ok=false when token missing', async () => {
