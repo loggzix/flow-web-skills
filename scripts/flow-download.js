@@ -106,6 +106,14 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
   const CONCURRENCY = 4; // Right-click download needs lower concurrency to avoid DOM menu race/overlap
   const pendingUpscaleJobs = [];
 
+  // Reset scroll to top before starting downloads to bring new videos into view
+  await page.evaluate(() => {
+    const scs = [...document.querySelectorAll('*')].filter(e => e.scrollHeight > e.clientHeight + 100 && e.clientHeight > 200);
+    const sc = scs.sort((a, b) => b.scrollHeight - a.scrollHeight)[0];
+    if (sc) sc.scrollTop = 0;
+  });
+  await page.waitForTimeout(500);
+
   // Listen to network request to detect upscale triggers
   let isUpscaleRequestFired = false;
   ctx.on('request', r => {
@@ -123,8 +131,15 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
       const file = path.join(outDir, `video_${String(job.n).padStart(2, '0')}_${editId.slice(0, 8)}.mp4`);
       
       try {
+        // Find the anchor link first (always present in virtual list metadata) and scroll it into view
+        const anchor = page.locator(`a[href*="/edit/${editId}"]`);
+        if (await anchor.count()) {
+          await anchor.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => {});
+          await page.waitForTimeout(300);
+        }
+
         // Find the video element directly inside the edit link (much safer and faster)
-        const video = page.locator(`a[href*="/edit/${editId}"]`).locator('video').first();
+        const video = anchor.locator('video').first();
         
         if (!(await video.count())) {
           console.log(`[DL] Tile ${editId.slice(0, 8)} video not in view, scrolling to find...`);
