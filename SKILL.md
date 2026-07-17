@@ -337,6 +337,7 @@ Nút `Tác nhân`: bật = thanh config biến mất, gãy selector. GIỮ TẮT
 - **MỘT Chrome automation** cho cả MCP lẫn runner: Chrome hệ thống + profile `chrome-nhi-profile` (login Flow sẵn), **CDP 9666**, tự start cùng Windows (`chrome-flow-cdp.vbs` Startup). Chrome cá nhân của Long là process khác — KHÔNG đụng.
 - **Env vars (portability):**
   - `FLOW_CDP` — CDP endpoint (default `http://127.0.0.1:9666`). Đổi port hoặc remote: `export FLOW_CDP=http://192.168.1.5:9222`.
+  - `FLOW_RESOLUTION` — Độ phân giải tải về (default `1080p`, hỗ trợ: `720p`, `1080p`, `4k`). Cực kỳ quan trọng: CLI sẽ tự click chuột phải vào video trên Flow, hover mở submenu Radix UI và bấm chọn độ phân giải tương ứng. Nếu tuỳ chọn bị mờ/disabled (aria-disabled), tự động fallback xuống phân giải thấp hơn.
   - `FLOW_CHAR_URL` — URL nhân vật cho `flow-mytab.js` (default: project test Long). Đổi khi dùng nhân vật khác.
 - **MCP không tự spawn browser:** `@playwright/mcp --cdp-endpoint http://127.0.0.1:9666` → MCP + runner nhìn CÙNG browser/tab/login. (Kiến trúc 2 browser cũ = nguồn blank page/profile lock — ĐÃ BỎ.)
 - **Tốc độ:** (1) thao tác lặp → runner Phần G; (2) điều khiển browser nhiều bước → gộp loop vào MỘT lệnh chạy JS trên page (browser tool hiện có), không snapshot xen giữa; (3) tab nền bị throttle → `bringToFront` trước khi nghe network/poll; (4) không mở tab mới thừa.
@@ -412,12 +413,12 @@ Hermes chạy 2 provider thật: `ikame` (Claude, proxy zegoplatform.ikameglobal
 | `flow-fire-char.js` | `node flow-fire-char.js <char-scenes.json> [report.json]` | Fire N cảnh KÈM NHÂN VẬT (ingredient, chế độ Thành phần); tự gắn lại ingredient trước từng cảnh. |
 | `flow-fire-frame.js` | `node flow-fire-frame.js <frame-scenes.json> [report.json]` | Fire N cảnh chế độ KHUNG HÌNH (frame đầu); tự gắn lại frame trước từng cảnh. scenes.json: `{project, expectConfig, scenes:[{id, prompt, frame:"tên_file.jpg"}]}`. |
 | `flow-gen-frames.js` | `node flow-gen-frames.js <frames.json> [report]` | **BƯỚC 1 auto:** config image mode → attach ref ảnh khách → fire prompt gen frame → collect workflowIds. Input: `{project, scenes: [{id, refImage, prompt}]}`. Ref image phải upload trước. |
-| `flow-job.js` | `node flow-job.js <scenes.json> <outDir> [report]` | **Job trọn vẹn**: fire → poll nền (adaptive 15/30/45s) → download → đặt tên. **Async spawn** — không block. |
-| `flow-job-mixed.js` | `node flow-job-mixed.js <mixed.json> <outDir>` | **⭐ Job MIXED (frame+char):** tự chạy tuần tự Khung hình → Thành phần → poll → download. **Async spawn.** 1 lệnh cho toàn bộ job trộn chế độ. |
-| `flow-status.js` | `node flow-status.js <projectId> [listenSeconds=20]` | `bringToFront` rồi nghe poll render + đếm grid. **Tối ưu:** tự động fallback quét DOM grid tìm clip xong (`NO_POLLS_GRID_FALLBACK`) sau 8s nếu server ngắt poll, cập nhật map đầy đủ. |
+| `flow-job.js` | `node flow-job.js <scenes.json> <outDir> [report]` | **Job trọn vẹn**: fire → poll nền (adaptive 15/30/45s) + **Tải gối đầu song song (Streaming Download - Mới 2026-07-17)**: tự động tải ngay clip xong trong lúc poll (x8 luồng ngầm, không block) → đặt tên. Timeout 15p. |
+| `flow-job-mixed.js` | `node flow-job-mixed.js <mixed.json> <outDir>` | **⭐ Job MIXED (frame+char):** tự chạy tuần tự Khung hình → Thành phần → poll + **Tải gối đầu** → download. Timeout 15p. |
+| `flow-status.js` | `node flow-status.js <projectId> [listenSeconds=20]` | `bringToFront` rồi nghe poll render + đếm grid. **Tối ưu tự quét grid cứu kẹt (NO_POLLS_EARLY_FALLBACK - Mới 2026-07-17):** tự động fallback quét DOM grid sau 8s im lặng để cứu kẹt status. |
 | `flow-download.js` | `node flow-download.js <projectId> <outDir> [maxCount] [idsFile]` | Gom video (cuộn-gom) tải song song **8 luồng** (`CONCURRENCY=8`) + retry + `manifest.json`. `idsFile` = JSON array editId. **RESUME:** bỏ qua clip đã tải + ghi manifest tăng dần. |
-| `flow-job.js` | `node flow-job.js <scenes.json> <outDir> [report]` | **Job trọn vẹn**: fire → poll nền (adaptive 15/30/45s) → download → đặt tên. **Tối ưu:** timeout 15 phút, async spawn. |
-| `flow-voice.js` | `node flow-voice.js <descPath> <voiceName> <outWav> [charUrl]` | Tạo giọng custom + bắt audio Xem trước về wav. `charUrl` = URL trang nhân vật (mặc định: project test của Long). |
+| `flow-job.js` | `node flow-job.js <scenes.json> <outDir> [report]` | **Job trọn vẹn**: fire → poll nền (adaptive 15/30/45s) + **Streaming Download** (tải gối đầu ngay khi clip xong) → đặt tên. **Tối ưu:** timeout 15 phút, async spawn. |
+| `flow-job-mixed.js` | `node flow-job-mixed.js <mixed.json> <outDir>` | **⭐ Job MIXED (frame+char):** tự chạy tuần tự Khung hình → Thành phần → poll + **Streaming Download** → download. **Async spawn.** 1 lệnh cho toàn bộ job trộn chế độ. |
 
 `flow-lib.js` = code chung (connect CDP, tìm page, check chip, gõ prompt + fire, bắt request gen, tự chữa blank page); `flow-mytab.js` = helper page. Đừng gọi trực tiếp.
 
@@ -425,7 +426,16 @@ Hermes chạy 2 provider thật: `ikame` (Claude, proxy zegoplatform.ikameglobal
 
 **⚠️ Chạy node qua git-bash (MSYS): file arg PHẢI là path Windows native `C:\...`, KHÔNG dùng `/c/...` hay `$HOME/...`.** MSYS mangle POSIX path khi truyền cho `node` → nhận `C:\c\Users\...` → MODULE_NOT_FOUND. Đúng: `cd 'C:\...\scripts' && node flow-job.js 'C:\...\scenes.json'`. Áp cho cả path scenes.json/report/outDir truyền vào runner.
 
-**⚠️ Terminal cắt lệnh khi vượt cap (~60-180s) — foreground timeout GIẾT process node (verify 2026-07-15).** ĐỪNG tin "process vẫn chạy nền tới xong": khi lệnh foreground bị công cụ terminal cắt vì timeout, OS process node bị KILL luôn → `flow-job.js` chết ĐANG DỞ ở bước POLL_ROUND, video render trên server vẫn xong nhưng KHÔNG được download/rename. Triệu chứng: log dừng ở `POLL_ROUND N`, `job-report.json` không sinh ra, output chỉ có `fire-report.json` + `media-map.json` + 0-1 .mp4.
+**⚠️ Terminal cắt lệnh khi vượt cap (~60-180s) — foreground timeout GIẾT process node (verify 2026-07-15).** ĐỪNG tin "process vẫn chạy nền tới xong": khi lệnh foreground bị công cụ terminal cắt vì timeout, OS process node bị KILL luôn → `flow-job.js` chết ĐANG DỞ ở bước POLL_ROUND.
+- **Tải độ phân giải cao (1080p/4K) (Vá 2026-07-17):** Để tải video chất lượng cao (1080p hoặc 4K) thay vì mặc định 720p, bắt buộc phải dùng cơ chế Right-Click context menu của Flow (API blob URL trực tiếp không hỗ trợ nâng độ phân giải qua query params). Quy trình tự động bằng Playwright:
+  1. Di chuyển tới video: `await videoEl.scrollIntoViewIfNeeded()`.
+  2. Click chuột phải: `await videoEl.click({ button: 'right' })`.
+  3. Đợi context menu Radix: `await page.locator('[role="menu"]').first().waitFor()`.
+  4. Hover vào mục "Tải xuống" để trigger mở submenu: `await page.locator('[role="menuitem"][aria-haspopup="menu"]:has-text("Tải xuống")').first().hover()`.
+  5. Đợi submenu Radix: `await page.locator('[role="menu"]').nth(1).waitFor()`.
+  6. Click chọn độ phân giải: `await page.locator('[role="menuitem"]:has-text("1080p")').first().click()`. (Nếu 1080p bị mờ/disabled/không có, fallback click `720p`).
+  7. Bắt sự kiện tải để lấy file: `const download = await page.waitForEvent('download')`.
+- **Tải gối đầu (Streaming Download):** Vừa poll thấy clip nào có status `SUCCESSFUL` là trigger tải ngầm song song ngay lập tức bằng `flow-download.js` (không `await` block vòng lặp poll chính). Rút ngắn thời gian chờ tải ở cuối job về 0 giây.
 - **PHÒNG:** fire xong (thấy `DONE fired=8/8` trong log) là phần khó nhất đã xong — render là việc server. ĐỪNG chạy lại `flow-job.js` (outDir có .mp4/report cũ → tự ABORT hoặc trùng).
 - **CỨU (recipe verify 2026-07-15):** render đã xong trên web (grid full tile) → chạy THẲNG `flow-download.js <projectId> <outDir> 16` (count RỘNG ≥2× số cảnh) để cuộn-gom kéo hết clip về. Rồi map+rename thủ công bằng python: đọc `fire-report.json` (`scenes[].workflowIds`) + `media-map.json` (title→scene) → so khớp hash trong tên file `video_NN_<hash>.mp4` với editId → `os.rename` thành `<sceneId>_vK.mp4`. Cảnh nào chỉ ra 1 clip mà các cảnh khác đủ 2 → file `unknown_v1.mp4` còn lại chính là bản thiếu của cảnh đó.
 - Poll tiến độ khi thực sự backgrounded: `sleep 30 && ls <outDir>/*.mp4 | wc -l` lặp tới khi số file NGỪNG tăng + `manifest.json` xuất hiện = xong.

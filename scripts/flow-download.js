@@ -94,33 +94,100 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
     const man = done.map(f => seen.get(f) || { file: f, editId: f.split('_')[2].slice(0, 8), bytes: fs.statSync(path.join(outDir, f)).size });
     fs.writeFileSync(manifestPath, JSON.stringify(man, null, 2));
   };
-  // CDN Google reset khi qua nhieu ket noi song song → giu 8 luong (optimized for performance).
-  const CONCURRENCY = 8;
-  async function fetchOne(job) {
-    const url = job.src.startsWith('http') ? job.src : 'https://labs.google' + job.src;
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        const resp = await ctx.request.get(url, { timeout: 120000, maxRedirects: 10 });
-        if (!resp.ok()) throw new Error(`HTTP ${resp.status()}`);
-        return await resp.body();
-      } catch (e) {
-        if (attempt === 3) throw e;
-        await new Promise(r => setTimeout(r, 800 * attempt));
-      }
-    }
-  }
+  // Resolution config from env (default 1080p, supported: 720p, 1080p, 4k)
+  const RESOLUTION = process.env.FLOW_RESOLUTION || '1080p';
+  const CONCURRENCY = 4; // Right-click download needs lower concurrency to avoid DOM menu race/overlap
+
   async function worker() {
     let job;
     while ((job = jobs.shift())) {
-      const editId = editIdOf(job) || String(job.n).padStart(2, '0');
+      const editId = editIdOf(job);
+      if (!editId) continue;
       const file = path.join(outDir, `video_${String(job.n).padStart(2, '0')}_${editId.slice(0, 8)}.mp4`);
+      
       try {
-        const buf = await fetchOne(job);
-        fs.writeFileSync(file, buf);
-        results.push({ n: job.n, file: path.basename(file), editId, bytes: buf.length, label: job.label });
-        console.log(`SAVED ${path.basename(file)} ${(buf.length / 1e6).toFixed(1)}MB`);
-        flushManifest();
-      } catch (e) { console.log(`FAIL ${job.n}:`, e.message.split('\n')[0]); fail++; }
+        // Find the video tile element by href edit link
+        const tile = page.locator(`a[href*="/edit/${editId}"]`).locator('..').locator('..');
+        const video = tile.locator('video').first();
+        if (!(await video.count())) {
+          console.log(`FAIL ${job.n}: No video element inside tile for ${editId.slice(0, 8)}`);
+          fail++;
+          continue;
+        }
+
+        // Right-click target video
+        await video.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => {});
+        await video.click({ button: 'right', timeout: 5000 });
+        
+        // Wait for Radix context menu to appear
+        const menu = page.locator('[role="menu"]').first();
+        await menu.waitFor({ state: 'visible', timeout: 5000 });
+
+        // Hover over "Tải xuống" or "Download" sub-trigger
+        const dlTrigger = menu.locator('[role="menuitem"][aria-haspopup="menu"]').filter({ hasText: /Tải xuống|Download/ }).first();
+        if (!(await dlTrigger.count())) {
+          console.log(`FAIL ${job.n}: Download submenu trigger not found`);
+          await page.keyboard.press('Escape').catch(() => {});
+          fail++;
+          continue;
+        }
+        await dlTrigger.hover({ timeout: 5000 });
+        await page.waitForTimeout(200);
+
+        // Wait for Radix submenu
+        const submenu = page.locator('[role="menu"]').nth(1);
+        await submenu.waitFor({ state: 'visible', timeout: 5000 });
+
+        // Fallback chain based on requested resolution
+        const requested = RESOLUTION.toLowerCase();
+        const chain = requested === '4k' 
+          ? ['4K', '1080p', '720p'] 
+          : (requested === '1080p' ? ['1080p', '720p'] : ['720p']);
+
+        let clicked = false;
+        let finalRes = '720p';
+
+        for (const res of chain) {
+          const option = submenu.locator('[role="menuitem"]').filter({ hasText: new RegExp('^' + res, 'i') }).first();
+          if (await option.count()) {
+            const isDisabled = await option.getAttribute('aria-disabled').then(v => v === 'true').catch(() => false);
+            if (!isDisabled) {
+              // Trigger Playwright's download event listener before clicking
+              const downloadPromise = page.waitForEvent('download', { timeout: 25000 });
+              await option.click({ timeout: 5000 });
+              const download = await downloadPromise;
+              
+              // Save file to destination
+              await download.saveAs(file);
+              const bytes = fs.statSync(file).size;
+              
+              results.push({ n: job.n, file: path.basename(file), editId, bytes, label: job.label });
+              console.log(`SAVED ${path.basename(file)} [${res}] ${(bytes / 1e6).toFixed(1)}MB`);
+              flushManifest();
+              
+              clicked = true;
+              finalRes = res;
+              break;
+            } else {
+              console.log(`[DL] ${res} option is disabled (aria-disabled) for ${editId.slice(0, 8)}, trying fallback...`);
+            }
+          }
+        }
+
+        // Escape if menu still open
+        await page.keyboard.press('Escape').catch(() => {});
+        await page.waitForTimeout(150);
+
+        if (!clicked) {
+          console.log(`FAIL ${job.n}: No available resolution matched from chain [${chain.join(', ')}]`);
+          fail++;
+        }
+
+      } catch (e) {
+        console.log(`FAIL ${job.n} (${editId.slice(0, 8)}):`, e.message.split('\n')[0]);
+        await page.keyboard.press('Escape').catch(() => {});
+        fail++;
+      }
     }
   }
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, jobs.length) }, worker));
