@@ -123,11 +123,26 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
       const file = path.join(outDir, `video_${String(job.n).padStart(2, '0')}_${editId.slice(0, 8)}.mp4`);
       
       try {
-        // Find the video tile element by href edit link
+        // Find the video tile element by href edit link - scroll to find if not mounted
         const tile = page.locator(`a[href*="/edit/${editId}"]`).locator('..').locator('..');
-        const video = tile.locator('video').first();
+        let video = tile.locator('video').first();
+        
         if (!(await video.count())) {
-          console.log(`FAIL ${job.n}: No video element inside tile for ${editId.slice(0, 8)}`);
+          console.log(`[DL] Tile ${editId.slice(0, 8)} not in view, scrolling to find...`);
+          // Scroll container down step-by-step to trigger virtual list loading
+          for (let s = 0; s < 12; s++) {
+            await page.evaluate(() => {
+              const scs = [...document.querySelectorAll('*')].filter(e => e.scrollHeight > e.clientHeight + 100 && e.clientHeight > 200);
+              const sc = scs.sort((a, b) => b.scrollHeight - a.scrollHeight)[0];
+              if (sc) sc.scrollTop += 500;
+            });
+            await page.waitForTimeout(400);
+            if (await video.count()) break;
+          }
+        }
+
+        if (!(await video.count())) {
+          console.log(`FAIL ${job.n}: No video element inside tile for ${editId.slice(0, 8)} (even after scrolling)`);
           fail++;
           continue;
         }
