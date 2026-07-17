@@ -331,8 +331,8 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
     await page.waitForTimeout(90000);
     // Push pending jobs back to main queue
     jobs.push(...pendingUpscaleJobs);
-    // Run second pass download
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, jobs.length) }, worker));
+    // Run second pass download sequentially (CONCURRENCY=1) to prevent Playwright temp file write collisions on Windows
+    await Promise.all(Array.from({ length: Math.min(1, jobs.length) }, worker));
   }
 
   flushManifest();
