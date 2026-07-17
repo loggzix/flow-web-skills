@@ -206,39 +206,42 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
                 continue;
               }
               opt.click();
-              // Return resolution type and whether it's an upscale trigger or direct download.
-              // 1080p/4k typically has subtext like "Đã tăng độ phân giải" or "tín dụng".
-              const isUpscaleTrigger = opt.textContent.includes('tăng') || opt.textContent.includes('tín dụng');
-              return { success: true, res, isUpscaleTrigger };
+              return { success: true, res };
             }
           }
           return { success: false };
         }, RESOLUTION);
 
         if (clickResult && clickResult.success) {
-          if (clickResult.isUpscaleTrigger) {
-            console.log(`[DL] Triggered upscale [${clickResult.res}] for ${editId.slice(0, 8)}. Waiting for server process...`);
-            // Close the Radix popup toast if it appears (top right)
-            await page.waitForTimeout(1000);
+          // Wait up to 3.5s to see if it triggers a download event or opens an upscale toast/popup
+          const outcome = await Promise.race([
+            downloadPromise.then(dl => ({ type: 'download', dl })),
+            // Toast check
+            page.waitForSelector('[data-sonner-toast], div:has-text("Đang tăng độ phân giải"), div:has-text("Upscaling video")', { timeout: 3500 })
+              .then(() => ({ type: 'upscale' })),
+            // Fallback timeout
+            page.waitForTimeout(3000).then(() => ({ type: 'timeout' }))
+          ]).catch(() => ({ type: 'timeout' }));
+
+          if (outcome.type === 'upscale' || outcome.type === 'timeout') {
+            console.log(`[DL] Upscale triggered or timed out for ${editId.slice(0, 8)}. Waiting for server process...`);
+            // Close the Radix popup toast if it appears (top right or dialog)
+            await page.waitForTimeout(500);
             const closeBtn = page.locator('button:has-text("Đóng"), button:has-text("Close")').first();
             if (await closeBtn.count()) {
               await closeBtn.click().catch(() => {});
             }
-            // Mark job as pending upscale so we can download it in second pass
             job.needsUpscaleWait = true;
             pendingUpscaleJobs.push(job); // push to temporary queue for second pass
             clicked = true;
-          } else {
-            const download = await downloadPromise;
-            if (download) {
-              await download.saveAs(file);
-              const bytes = fs.statSync(file).size;
-              results.push({ n: job.n, file: path.basename(file), editId, bytes, label: job.label });
-              console.log(`SAVED ${path.basename(file)} [${clickResult.res}] ${(bytes / 1e6).toFixed(1)}MB`);
-              flushManifest();
-              clicked = true;
-              finalRes = clickResult.res;
-            }
+          } else if (outcome.type === 'download' && outcome.dl) {
+            await outcome.dl.saveAs(file);
+            const bytes = fs.statSync(file).size;
+            results.push({ n: job.n, file: path.basename(file), editId, bytes, label: job.label });
+            console.log(`SAVED ${path.basename(file)} [${clickResult.res}] ${(bytes / 1e6).toFixed(1)}MB`);
+            flushManifest();
+            clicked = true;
+            finalRes = clickResult.res;
           }
         }
 
