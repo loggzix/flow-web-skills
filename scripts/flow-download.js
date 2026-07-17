@@ -107,9 +107,9 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
   let fail = 0;
   // Ghi manifest TANG DAN: job bi terminal cat (~60s) van co manifest phan anh clip da tai + resume duoc.
   const flushManifest = () => {
-    const done = fs.readdirSync(outDir).filter(f => f.endsWith('.mp4')).sort();
+    const done = fs.readdirSync(outDir).filter(f => /^video_\d+_[0-9a-f]{8}\.mp4$/.test(f)).sort();
     const seen = new Map(results.map(r => [r.file, r]));
-    const man = done.map(f => seen.get(f) || { file: f, editId: f.split('_')[2]?.slice(0, 8) || '', bytes: fs.statSync(path.join(outDir, f)).size });
+    const man = done.map(f => seen.get(f) || { file: f, editId: f.split('_')[2].slice(0, 8), bytes: fs.statSync(path.join(outDir, f)).size });
     fs.writeFileSync(manifestPath, JSON.stringify(man, null, 2));
   };
   // Resolution config from env (default 1080p, supported: 720p, 1080p, 4k)
