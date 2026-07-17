@@ -1,6 +1,6 @@
 ---
 name: xuong-phim-ai-flow-video
-description: "Use when Long asks to làm/gen video, gen clip, render video, job xưởng phim, làm clip cho khách, or gives a Jobs/<Tên> path — end-to-end Google Flow (Veo) video generation via bundled CDP runner scripts, prompt recipe, and ad-writing patterns."
+description: "Use when Long asks to làm/gen video, gen clip, render video, job xưởng phim, làm clip cho khách, or gives a Jobs/<Tên> path to run end-to-end Google Flow (Veo) video generation via bundled CDP runner scripts, prompt recipe, and ad-writing patterns."
 version: 1.0.0
 author: Long (loggzix)
 license: MIT
@@ -10,6 +10,7 @@ metadata:
   hermes:
     tags: [video, google-flow, veo, cdp, playwright, content-creation]
     related_skills: [darwin-skill, ascii-video, youtube-content]
+  related_skills: []
 ---
 
 # Skill: Xưởng Phim AI — Làm video bằng Google Flow (Veo)
@@ -676,3 +677,24 @@ Voice Tone: [Y HỆT cảnh 1, thêm tự tin, kết thúc dứt khoát]
 ```
 
 **Fill rule:** thay `[...]` bằng nội dung brief. Giữ nguyên format tiền tố + xuống dòng. Rà H3 checklist trước khi chốt.
+
+## 📋 VERIFICATION CHECKLIST (Kiểm thử & Bàn giao) {#phan-i}
+Sau khi chạy xong Runner / script tạo video, thực hiện tuần tự:
+1. **Kiểm tra file output:**
+   - [ ] Đủ số lượng clip `.mp4` tương ứng số cảnh (đối chiếu `scenes.json`).
+   - [ ] Có file `manifest.json` trong thư mục output (chứa log render và mapping).
+   - [ ] Tên file đúng định dạng: `<sceneId>_vK.mp4` (hoặc định dạng map của job).
+2. **Kiểm tra chất lượng (QC):**
+   - [ ] Trích xuất frame giữa của các clip bằng ffmpeg:
+     ```bash
+     ffmpeg -y -ss 00:00:02 -i clip.mp4 -vframes 1 frame.jpg
+     ```
+   - [ ] Chạy `vision_analyze(frame.jpg)` để verify nội dung (chủ thể, watermark, lỗi bố cục).
+   - [ ] Nếu lỗi vision provider, dùng `agy` để verify từ xa:
+     ```bash
+     "C:/Users/longnv/AppData/Local/agy/bin/agy.exe" --dangerously-skip-permissions --add-dir "C:/path/to/job/dir" -p "Verify clip.mp4 in this folder"
+     ```
+3. **Kiểm tra tích hợp:**
+   - [ ] Đảm bảo không còn file rác `unknown_vK.mp4`.
+   - [ ] Đảm bảo video không bị cắt nửa chừng (dưới 3-5s).
+   - [ ] Đọc lại `ghi_chu_san_xuat.md` để chắc chắn không sót yêu cầu hậu kỳ.
