@@ -23,7 +23,7 @@ if (oldMp4.length) { console.log(`JOB_ABORT: outDir đã có ${oldMp4.length} .m
 
 function run(script, args) {
   return new Promise((resolve) => {
-    const child = spawn('node', [path.join(__dirname, script), ...args], { timeout: 10 * 60 * 1000 });
+    const child = spawn('node', [path.join(__dirname, script), ...args], { timeout: 15 * 60 * 1000 });
     let out = '';
     child.stdout.on('data', d => { out += d; process.stdout.write(d); });
     child.stderr.on('data', d => { out += d; process.stderr.write(d); });

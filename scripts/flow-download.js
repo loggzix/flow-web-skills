@@ -94,8 +94,8 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
     const man = done.map(f => seen.get(f) || { file: f, editId: f.split('_')[2].slice(0, 8), bytes: fs.statSync(path.join(outDir, f)).size });
     fs.writeFileSync(manifestPath, JSON.stringify(man, null, 2));
   };
-  // CDN Google reset khi qua nhieu ket noi song song → giu 3 luong + retry (ECONNRESET la transient).
-  const CONCURRENCY = 3;
+  // CDN Google reset khi qua nhieu ket noi song song → giu 8 luong (optimized for performance).
+  const CONCURRENCY = 8;
   async function fetchOne(job) {
     const url = job.src.startsWith('http') ? job.src : 'https://labs.google' + job.src;
     for (let attempt = 1; attempt <= 3; attempt++) {

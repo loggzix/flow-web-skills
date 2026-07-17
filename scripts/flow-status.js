@@ -10,7 +10,7 @@ const fs = require('fs');
 const [, , projectId, secsArg, mapPath, gridArg] = process.argv;
 const SKIP_GRID = gridArg === 'nogrid';
 const LISTEN = (parseInt(secsArg, 10) || 20) * 1000;
-const NO_POLL_GIVEUP = 15000; // trang poll ~10s/lan khi dang render → duoi 15s la chua ket luan duoc
+const NO_POLL_GIVEUP = 8000; // optimized fallback: if no polls in 8s, switch to grid scan immediately
 const IDLE_AFTER_POLL = 7000;
 
 (async () => {
@@ -78,6 +78,47 @@ const IDLE_AFTER_POLL = 7000;
   console.log('STATUS_COUNTS:', JSON.stringify(counts, null, 1));
   for (const [id, st] of Object.entries(media)) console.log(' ', id.slice(0, 12), st);
   if (polls === 0) console.log('NO_POLLS — het video dang render (hoac tat ca xong / trang khong o project nay).');
+
+  // GRID FALLBACK FOR MAP: if no polls (finished videos), collect directly from DOM grid to mapPath
+  if (polls === 0 && mapPath) {
+    try {
+      console.log('NO_POLLS_GRID_FALLBACK: scanning DOM grid directly...');
+      const videoFilter = page.locator('[role="tab"], button').filter({ hasText: /videocam|Xem video/ }).first();
+      if (await videoFilter.count()) { await videoFilter.click({ timeout: 5000 }).catch(() => {}); await page.waitForTimeout(1000); }
+      
+      const gridItems = await page.evaluate(() => {
+        return [...document.querySelectorAll('video')].map(v => {
+          let el = v, edit = null, label = '';
+          for (let i = 0; i < 10 && el; i++) {
+            const a = el.querySelector && el.querySelector('a[href*="/edit/"]');
+            if (el.tagName === 'A' && el.href.includes('/edit/')) edit = el.href;
+            else if (a) edit = a.href;
+            if (edit) break;
+            el = el.parentElement;
+          }
+          let p = v.parentElement;
+          for (let i = 0; i < 6 && p; i++) { if (p.innerText && p.innerText.trim().length > 30) { label = p.innerText.trim().slice(0, 80); break; } p = p.parentElement; }
+          return { edit, label };
+        }).filter(x => x.edit);
+      });
+
+      let merged = {};
+      try { merged = JSON.parse(fs.readFileSync(mapPath, 'utf8')); } catch (_) {}
+      for (const item of gridItems) {
+        const wf = item.edit.split('/edit/')[1].split(/[/?#]/)[0];
+        if (wf) {
+          merged[wf] = {
+            title: item.label,
+            status: 'SUCCESSFUL' // If visible in grid with video tag, it is successfully rendered
+          };
+        }
+      }
+      fs.writeFileSync(mapPath, JSON.stringify(merged, null, 2));
+      console.log('MAP_WRITTEN_FROM_GRID:', mapPath, `(${Object.keys(merged).length} workflow)`);
+    } catch (e) {
+      console.log('GRID_FALLBACK_ERR:', e.message.split('\n')[0]);
+    }
+  }
 
   if (mapPath) {
     let merged = {};

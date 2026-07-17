@@ -18,7 +18,7 @@ const MAX_WAIT = 15 * 60 * 1000;
 
 function run(tool, args, quiet) {
   return new Promise((resolve) => {
-    const child = spawn('node', [path.join(__dirname, tool), ...args], { encoding: 'utf8', timeout: 10 * 60 * 1000 });
+    const child = spawn('node', [path.join(__dirname, tool), ...args], { encoding: 'utf8', timeout: 15 * 60 * 1000 });
     let stdout = '', stderr = '';
     child.stdout.on('data', d => { stdout += d; if (!quiet) process.stdout.write(d); });
     child.stderr.on('data', d => { stderr += d; process.stderr.write(d); });
