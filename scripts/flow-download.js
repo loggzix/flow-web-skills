@@ -26,6 +26,13 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
   const videoFilter = page.locator('[role="tab"], button').filter({ hasText: /videocam|Xem video/ }).first();
   if (await videoFilter.count()) { try { await videoFilter.click({ timeout: 5000 }); await page.waitForTimeout(2000); } catch (_) {} }
 
+  // Listen to page console to capture evaluate logs
+  page.on('console', msg => {
+    if (msg.text().includes('Submenu') || msg.text().includes('match') || msg.text().includes('disabled')) {
+      console.log(`[PAGE_CONSOLE] ${msg.text()}`);
+    }
+  });
+
   // Grid Flow la VIRTUALIZED list: tile ngoai khung nhin bi unmount → cuon tung buoc tu dinh xuong, GOM item dan.
   const collectMounted = () => page.evaluate(() => {
     const batch = [...document.querySelectorAll('video')].map(v => {
@@ -98,11 +105,21 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
   const RESOLUTION = process.env.FLOW_RESOLUTION || '1080p';
   const CONCURRENCY = 4; // Right-click download needs lower concurrency to avoid DOM menu race/overlap
 
+  let upscaleWaitDone = false;
+
   async function worker() {
     let job;
     while ((job = jobs.shift())) {
       const editId = editIdOf(job);
       if (!editId) continue;
+
+      // Smart wait: delay 45s before starting second-pass downloads for upscaled files
+      if (job.needsUpscaleWait && !upscaleWaitDone) {
+        console.log('[DL] Pausing for 45 seconds to let Google Flow finish upscaling...');
+        await page.waitForTimeout(45000);
+        upscaleWaitDone = true;
+      }
+
       const file = path.join(outDir, `video_${String(job.n).padStart(2, '0')}_${editId.slice(0, 8)}.mp4`);
       
       try {
@@ -115,15 +132,15 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
           continue;
         }
 
-        // Right-click target video
-        await video.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => {});
-        await video.click({ button: 'right', timeout: 5000 });
+        // Right-click target video via dispatchEvent to bypass visibility checks
+        await video.scrollIntoViewIfNeeded({ timeout: 8000 }).catch(() => {});
+        await video.evaluate(el => el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })));
         
         // Wait for Radix context menu to appear
         const menu = page.locator('[role="menu"]').first();
         await menu.waitFor({ state: 'visible', timeout: 5000 });
 
-        // Hover over "Tải xuống" or "Download" sub-trigger
+        // Hover over "Tải xuống" or "Download" sub-trigger using direct DOM events
         const dlTrigger = menu.locator('[role="menuitem"][aria-haspopup="menu"]').filter({ hasText: /Tải xuống|Download/ }).first();
         if (!(await dlTrigger.count())) {
           console.log(`FAIL ${job.n}: Download submenu trigger not found`);
@@ -131,8 +148,34 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
           fail++;
           continue;
         }
-        await dlTrigger.hover({ timeout: 5000 });
-        await page.waitForTimeout(200);
+
+        const triggerFound = await dlTrigger.evaluate(el => {
+          const rect = el.getBoundingClientRect();
+          const cx = rect.left + rect.width / 2;
+          const cy = rect.top + rect.height / 2;
+          const pointerOpts = { bubbles: true, cancelable: true, clientX: cx, clientY: cy, pointerId: 1, pointerType: 'mouse' };
+          const mouseOpts = { bubbles: true, cancelable: true, clientX: cx, clientY: cy };
+          
+          el.dispatchEvent(new PointerEvent('pointerover', pointerOpts));
+          el.dispatchEvent(new PointerEvent('pointerenter', pointerOpts));
+          el.dispatchEvent(new PointerEvent('pointermove', pointerOpts));
+          el.dispatchEvent(new MouseEvent('mouseover', mouseOpts));
+          el.dispatchEvent(new MouseEvent('mouseenter', mouseOpts));
+          el.dispatchEvent(new MouseEvent('mousemove', mouseOpts));
+          el.focus();
+          
+          // Also click to force submenu open on some Radix versions
+          el.click();
+          return true;
+        }).catch(() => false);
+
+        if (!triggerFound) {
+          console.log(`FAIL ${job.n}: Download submenu trigger failed to hover`);
+          await page.keyboard.press('Escape').catch(() => {});
+          fail++;
+          continue;
+        }
+        await page.waitForTimeout(400);
 
         // Wait for Radix submenu
         const submenu = page.locator('[role="menu"]').nth(1);
@@ -140,36 +183,62 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
 
         // Fallback chain based on requested resolution
         const requested = RESOLUTION.toLowerCase();
-        const chain = requested === '4k' 
-          ? ['4K', '1080p', '720p'] 
-          : (requested === '1080p' ? ['1080p', '720p'] : ['720p']);
-
         let clicked = false;
         let finalRes = '720p';
 
-        for (const res of chain) {
-          const option = submenu.locator('[role="menuitem"]').filter({ hasText: new RegExp('^' + res, 'i') }).first();
-          if (await option.count()) {
-            const isDisabled = await option.getAttribute('aria-disabled').then(v => v === 'true').catch(() => false);
-            if (!isDisabled) {
-              // Trigger Playwright's download event listener before clicking
-              const downloadPromise = page.waitForEvent('download', { timeout: 25000 });
-              await option.click({ timeout: 5000 });
-              const download = await downloadPromise;
-              
-              // Save file to destination
+        // Trigger Playwright's download event listener before clicking
+        const downloadPromise = page.waitForEvent('download', { timeout: 25000 }).catch(() => null);
+
+        // Click the option directly inside the browser DOM
+        const clickResult = await submenu.evaluate((subEl, resolutionStr) => {
+          const items = Array.from(subEl.querySelectorAll('[role="menuitem"]'));
+          const requested = (resolutionStr || '1080p').toLowerCase();
+          const chainRes = requested === '4k' 
+            ? ['4k', '1080p', '720p'] 
+            : (requested === '1080p' ? ['1080p', '720p'] : ['720p']);
+
+          for (const res of chainRes) {
+            const opt = items.find(item => {
+              const text = (item.textContent || '').trim().toLowerCase();
+              return text.includes(res);
+            });
+            if (opt) {
+              if (opt.getAttribute('aria-disabled') === 'true') {
+                continue;
+              }
+              opt.click();
+              // Return resolution type and whether it's an upscale trigger or direct download.
+              // 1080p/4k typically has subtext like "Đã tăng độ phân giải" or "tín dụng".
+              const isUpscaleTrigger = opt.textContent.includes('tăng') || opt.textContent.includes('tín dụng');
+              return { success: true, res, isUpscaleTrigger };
+            }
+          }
+          return { success: false };
+        }, RESOLUTION);
+
+        if (clickResult && clickResult.success) {
+          if (clickResult.isUpscaleTrigger) {
+            console.log(`[DL] Triggered upscale [${clickResult.res}] for ${editId.slice(0, 8)}. Waiting for server process...`);
+            // Close the Radix popup toast if it appears (top right)
+            await page.waitForTimeout(1000);
+            const closeBtn = page.locator('button:has-text("Đóng"), button:has-text("Close")').first();
+            if (await closeBtn.count()) {
+              await closeBtn.click().catch(() => {});
+            }
+            // Mark job as pending upscale so we can download it in second pass
+            job.needsUpscaleWait = true;
+            jobs.push(job); // push back to queue to retry downloading later
+            clicked = true;
+          } else {
+            const download = await downloadPromise;
+            if (download) {
               await download.saveAs(file);
               const bytes = fs.statSync(file).size;
-              
               results.push({ n: job.n, file: path.basename(file), editId, bytes, label: job.label });
-              console.log(`SAVED ${path.basename(file)} [${res}] ${(bytes / 1e6).toFixed(1)}MB`);
+              console.log(`SAVED ${path.basename(file)} [${clickResult.res}] ${(bytes / 1e6).toFixed(1)}MB`);
               flushManifest();
-              
               clicked = true;
-              finalRes = res;
-              break;
-            } else {
-              console.log(`[DL] ${res} option is disabled (aria-disabled) for ${editId.slice(0, 8)}, trying fallback...`);
+              finalRes = clickResult.res;
             }
           }
         }
@@ -179,7 +248,7 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
         await page.waitForTimeout(150);
 
         if (!clicked) {
-          console.log(`FAIL ${job.n}: No available resolution matched from chain [${chain.join(', ')}]`);
+          console.log(`FAIL ${job.n}: No available resolution matched for ${RESOLUTION}`);
           fail++;
         }
 
