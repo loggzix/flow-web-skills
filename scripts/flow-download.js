@@ -127,10 +127,17 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
     while ((job = jobs.shift())) {
       const editId = editIdOf(job);
       if (!editId) continue;
-
       const file = path.join(outDir, `video_${String(job.n).padStart(2, '0')}_${editId.slice(0, 8)}.mp4`);
       
       try {
+        // Reset scroll to top before querying to ensure newly generated tiles (at the top) are mounted
+        await page.evaluate(() => {
+          const scs = [...document.querySelectorAll('*')].filter(e => e.scrollHeight > e.clientHeight + 100 && e.clientHeight > 200);
+          const sc = scs.sort((a, b) => b.scrollHeight - a.scrollHeight)[0];
+          if (sc) sc.scrollTop = 0;
+        });
+        await page.waitForTimeout(300);
+
         // Find the anchor link first (always present in virtual list metadata)
         let anchor = page.locator(`a[href*="/edit/${editId}"]`);
         
