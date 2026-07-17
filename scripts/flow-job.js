@@ -14,6 +14,7 @@ const spec = JSON.parse(fs.readFileSync(scenesPath, 'utf8').replace(/^\uFEFF/, '
 const isChar = !!spec.character;
 const REPORT = reportPath || 'tools/last-job-report.json';
 const MAP = path.join(outDir, 'media-map.json');
+const RESOLUTION = process.env.FLOW_RESOLUTION || '1080p';
 const MAX_WAIT = 15 * 60 * 1000;
 
 function run(tool, args, quiet) {
@@ -119,11 +120,16 @@ function matchScene(title) {
       const streamIdsPath = path.join(outDir, `_stream-ids-${Date.now()}.json`);
       fs.writeFileSync(streamIdsPath, JSON.stringify(readyToDownload));
       
-      // Chạy không block (không await) để vòng lặp poll tiếp tục chạy mượt mà
-      run('flow-download.js', [spec.project, outDir, String(readyToDownload.length), streamIdsPath], true)
-        .then(() => {
-          try { fs.unlinkSync(streamIdsPath); } catch (_) {}
-        });
+      // Sử dụng await khi tải 1080p/4k để tránh conflict file tạm trên Windows
+      if (RESOLUTION !== '720p') {
+        await run('flow-download.js', [spec.project, outDir, String(readyToDownload.length), streamIdsPath], true);
+        try { fs.unlinkSync(streamIdsPath); } catch (_) {}
+      } else {
+        run('flow-download.js', [spec.project, outDir, String(readyToDownload.length), streamIdsPath], true)
+          .then(() => {
+            try { fs.unlinkSync(streamIdsPath); } catch (_) {}
+          });
+      }
 
       for (const wf of readyToDownload) {
         downloadedWfs.add(wf);

@@ -114,7 +114,8 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
   };
   // Resolution config from env (default 1080p, supported: 720p, 1080p, 4k)
   const RESOLUTION = process.env.FLOW_RESOLUTION || '1080p';
-  const CONCURRENCY = 4; // Right-click download needs lower concurrency to avoid DOM menu race/overlap
+  // Use sequential downloads (CONCURRENCY=1) for high-res to prevent Playwright temp file collisions on Windows
+  const CONCURRENCY = RESOLUTION.toLowerCase() === '720p' ? 4 : 1;
   const pendingUpscaleJobs = [];
 
   // Reset scroll to top before starting downloads to bring new videos into view
