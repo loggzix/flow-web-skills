@@ -26,6 +26,14 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
   // Set large viewport to prevent virtualized grid unmounting
   await page.setViewportSize({ width: 1920, height: 1080 }).catch(() => {});
 
+  // Configure Chrome CDP to handle downloads directly to outDir
+  // This avoids Playwright temporary files and prevents corrupt/empty files in Chrome Download history
+  const cdpSession = await page.context().newCDPSession(page);
+  await cdpSession.send('Page.setDownloadBehavior', {
+    behavior: 'allow',
+    downloadPath: path.resolve(outDir)
+  }).catch(() => {});
+
   const videoFilter = page.locator('[role="tab"], button').filter({ hasText: /videocam|Xem video/ }).first();
   if (await videoFilter.count()) { try { await videoFilter.click({ timeout: 5000 }); await page.waitForTimeout(2000); } catch (_) {} }
 
@@ -246,11 +254,11 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
         let clicked = false;
         let finalRes = '720p';
 
-        // Trigger Playwright's download event listener before clicking
-        const downloadPromise = page.waitForEvent('download', { timeout: 25000 }).catch(() => null);
-
         // Reset the network upscale request flag before trigger click
         isUpscaleRequestFired = false;
+
+        // Take snapshot of files in outDir before clicking to detect the new file Chrome downloads
+        const filesBefore = new Set(fs.readdirSync(outDir));
 
         // Click the option directly inside the browser DOM
         const clickResult = await submenu.evaluate((subEl, resolutionStr) => {
@@ -277,18 +285,28 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
         }, RESOLUTION);
 
         if (clickResult && clickResult.success) {
-          // Wait briefly to see if network request or download fires
-          const outcome = await Promise.race([
-            downloadPromise.then(dl => ({ type: 'download', dl })),
-            // Watch the network flag (wait max 3s)
-            lib.pollUntil(page, () => isUpscaleRequestFired ? { type: 'upscale' } : null, 3000, 100),
-            // Fallback timeout
-            page.waitForTimeout(2800).then(() => ({ type: 'timeout' }))
-          ]).catch(() => ({ type: 'timeout' }));
+          // Wait briefly to see if network request (upscale) fires
+          // or if Chrome starts downloading (check directory for new files)
+          let outcome = { type: 'timeout' };
+          const startTime = Date.now();
+          
+          while (Date.now() - startTime < 3500) {
+            if (isUpscaleRequestFired) {
+              outcome = { type: 'upscale' };
+              break;
+            }
+            // Check if Chrome created a new download file (.mp4 or .crdownload) in outDir
+            const currentFiles = fs.readdirSync(outDir);
+            const newFile = currentFiles.find(f => !filesBefore.has(f) && (f.endsWith('.mp4') || f.endsWith('.crdownload')));
+            if (newFile) {
+              outcome = { type: 'download', filename: newFile };
+              break;
+            }
+            await page.waitForTimeout(100);
+          }
 
-          if (outcome && outcome.type === 'upscale') {
+          if (outcome.type === 'upscale') {
             console.log(`[DL] Network confirmed Upscale job generated on Google Server for ${editId.slice(0, 8)}. Waiting...`);
-            // Close the Radix popup toast if it appears (top right)
             await page.waitForTimeout(500);
             const closeBtn = page.locator('button:has-text("Đóng"), button:has-text("Close")').first();
             if (await closeBtn.count()) {
@@ -297,18 +315,57 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
             job.needsUpscaleWait = true;
             pendingUpscaleJobs.push(job); // push to temporary queue for second pass
             clicked = true;
-          } else if (outcome && outcome.type === 'download' && outcome.dl) {
-            await outcome.dl.saveAs(file);
-            const bytes = fs.statSync(file).size;
-            results.push({ n: job.n, file: path.basename(file), editId, bytes, label: job.label });
-            console.log(`SAVED ${path.basename(file)} [${clickResult.res}] ${(bytes / 1e6).toFixed(1)}MB`);
-            flushManifest();
-            clicked = true;
-            finalRes = clickResult.res;
+          } else if (outcome.type === 'download' && outcome.filename) {
+            // Chrome is downloading the file directly to outDir
+            const downloadedFile = outcome.filename;
+            let targetPath = path.join(outDir, downloadedFile);
+            
+            // Wait for Chrome download to complete (file should lose .crdownload extension)
+            let finished = false;
+            for (let w = 0; w < 120; w++) { // wait up to 60s
+              if (fs.existsSync(targetPath)) {
+                // If it ends with .crdownload, wait for Chrome to finalize it to .mp4
+                if (downloadedFile.endsWith('.crdownload')) {
+                  const finalName = downloadedFile.replace('.crdownload', '');
+                  const finalPath = path.join(outDir, finalName);
+                  if (fs.existsSync(finalPath)) {
+                    targetPath = finalPath;
+                    finished = true;
+                    break;
+                  }
+                } else {
+                  finished = true;
+                  break;
+                }
+              } else {
+                // Check if the final file already appeared
+                const finalName = downloadedFile.replace('.crdownload', '');
+                const finalPath = path.join(outDir, finalName);
+                if (fs.existsSync(finalPath)) {
+                  targetPath = finalPath;
+                  finished = true;
+                  break;
+                }
+              }
+              await page.waitForTimeout(500);
+            }
+
+            if (finished && fs.existsSync(targetPath)) {
+              // Rename to job standard file name: video_01_*.mp4
+              fs.renameSync(targetPath, file);
+              const bytes = fs.statSync(file).size;
+              results.push({ n: job.n, file: path.basename(file), editId, bytes, label: job.label });
+              console.log(`SAVED ${path.basename(file)} [${clickResult.res}] ${(bytes / 1e6).toFixed(1)}MB`);
+              flushManifest();
+              clicked = true;
+              finalRes = clickResult.res;
+            } else {
+              console.log(`[DL] Timeout waiting for Chrome to complete download for ${editId.slice(0, 8)}`);
+              fail++;
+            }
           } else {
-            // Timeout or no event caught - might be already upscaled but click didn't trigger download immediately,
-            // or network was slow. Retry as download fallback.
-            console.log(`[DL] No network response or download for ${editId.slice(0, 8)}, retrying download...`);
+            // Fallback: no event or file detected - might be already upscaled but slow network.
+            console.log(`[DL] No network response or file download detected for ${editId.slice(0, 8)}, retrying...`);
             job.needsUpscaleWait = true;
             pendingUpscaleJobs.push(job);
             clicked = true;
