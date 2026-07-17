@@ -106,6 +106,14 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
   const CONCURRENCY = 4; // Right-click download needs lower concurrency to avoid DOM menu race/overlap
   const pendingUpscaleJobs = [];
 
+  // Listen to network request to detect upscale triggers
+  let isUpscaleRequestFired = false;
+  ctx.on('request', r => {
+    if (r.url().includes('batchAsyncGenerateVideoUpsampleVideo')) {
+      isUpscaleRequestFired = true;
+    }
+  });
+
   async function worker() {
     let job;
     while ((job = jobs.shift())) {
@@ -188,6 +196,9 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
         // Trigger Playwright's download event listener before clicking
         const downloadPromise = page.waitForEvent('download', { timeout: 25000 }).catch(() => null);
 
+        // Reset the network upscale request flag before trigger click
+        isUpscaleRequestFired = false;
+
         // Click the option directly inside the browser DOM
         const clickResult = await submenu.evaluate((subEl, resolutionStr) => {
           const items = Array.from(subEl.querySelectorAll('[role="menuitem"]'));
@@ -213,19 +224,18 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
         }, RESOLUTION);
 
         if (clickResult && clickResult.success) {
-          // Wait up to 3.5s to see if it triggers a download event or opens an upscale toast/popup
+          // Wait briefly to see if network request or download fires
           const outcome = await Promise.race([
             downloadPromise.then(dl => ({ type: 'download', dl })),
-            // Toast check
-            page.waitForSelector('[data-sonner-toast], div:has-text("Đang tăng độ phân giải"), div:has-text("Upscaling video")', { timeout: 3500 })
-              .then(() => ({ type: 'upscale' })),
+            // Watch the network flag (wait max 3s)
+            lib.pollUntil(page, () => isUpscaleRequestFired ? { type: 'upscale' } : null, 3000, 100),
             // Fallback timeout
-            page.waitForTimeout(3000).then(() => ({ type: 'timeout' }))
+            page.waitForTimeout(2800).then(() => ({ type: 'timeout' }))
           ]).catch(() => ({ type: 'timeout' }));
 
-          if (outcome.type === 'upscale' || outcome.type === 'timeout') {
-            console.log(`[DL] Upscale triggered or timed out for ${editId.slice(0, 8)}. Waiting for server process...`);
-            // Close the Radix popup toast if it appears (top right or dialog)
+          if (outcome && outcome.type === 'upscale') {
+            console.log(`[DL] Network confirmed Upscale job generated on Google Server for ${editId.slice(0, 8)}. Waiting...`);
+            // Close the Radix popup toast if it appears (top right)
             await page.waitForTimeout(500);
             const closeBtn = page.locator('button:has-text("Đóng"), button:has-text("Close")').first();
             if (await closeBtn.count()) {
@@ -234,7 +244,7 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
             job.needsUpscaleWait = true;
             pendingUpscaleJobs.push(job); // push to temporary queue for second pass
             clicked = true;
-          } else if (outcome.type === 'download' && outcome.dl) {
+          } else if (outcome && outcome.type === 'download' && outcome.dl) {
             await outcome.dl.saveAs(file);
             const bytes = fs.statSync(file).size;
             results.push({ n: job.n, file: path.basename(file), editId, bytes, label: job.label });
@@ -242,6 +252,13 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
             flushManifest();
             clicked = true;
             finalRes = clickResult.res;
+          } else {
+            // Timeout or no event caught - might be already upscaled but click didn't trigger download immediately,
+            // or network was slow. Retry as download fallback.
+            console.log(`[DL] No network response or download for ${editId.slice(0, 8)}, retrying download...`);
+            job.needsUpscaleWait = true;
+            pendingUpscaleJobs.push(job);
+            clicked = true;
           }
         }
 
