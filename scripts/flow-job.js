@@ -79,6 +79,7 @@ function matchScene(title) {
   // allowance: tran so wf/canh khi nhat bo sung tu poll — tang them mult moi lan re-fire canh do.
   const allowance = {};
   for (const sc of spec.scenes) allowance[sc.id] = mult;
+  const downloadedWfs = new Set();
   const t0 = Date.now();
   let deadline = t0 + MAX_WAIT, lastFireAt = Date.now();
   let rounds = 0, succ = 0, refires = 0, done = false;
@@ -98,6 +99,37 @@ function matchScene(title) {
       const sid = matchScene(m.title);
       if (sid && Object.values(sceneByWf).filter(x => x === sid).length < allowance[sid]) sceneByWf[wf] = sid;
     }
+
+    // --- STREAMING DOWNLOAD: Tải gối đầu ngay khi clip xong (Không block vòng lặp poll) ---
+    const readyToDownload = [];
+    // Read actual directory files to verify presence
+    const existingHex = new Set(
+      fs.readdirSync(outDir)
+        .filter(f => /^video_\d+_[0-9a-f]{8}\.mp4$/.test(f))
+        .map(f => f.split('_')[2].slice(0, 8))
+    );
+    for (const [wf, m] of Object.entries(map)) {
+      const shortWf = wf.slice(0, 8);
+      if (sceneByWf[wf] && /SUCCESSFUL/.test(m.status || '') && !downloadedWfs.has(wf) && !existingHex.has(shortWf)) {
+        readyToDownload.push(wf);
+      }
+    }
+    if (readyToDownload.length > 0) {
+      console.log(`STREAMING_DOWNLOAD: Phat hien ${readyToDownload.length} clip render xong. Dang tai nguyen ban...`);
+      const streamIdsPath = path.join(outDir, `_stream-ids-${Date.now()}.json`);
+      fs.writeFileSync(streamIdsPath, JSON.stringify(readyToDownload));
+      
+      // Chạy không block (không await) để vòng lặp poll tiếp tục chạy mượt mà
+      run('flow-download.js', [spec.project, outDir, String(readyToDownload.length), streamIdsPath], true)
+        .then(() => {
+          try { fs.unlinkSync(streamIdsPath); } catch (_) {}
+        });
+
+      for (const wf of readyToDownload) {
+        downloadedWfs.add(wf);
+      }
+    }
+
     // Dem SUCCESSFUL theo TUNG CANH tren dung editId set cua job nay (cap mult/canh —
     // re-fire co the du thua, chi can moi canh du x4).
     const perScene = {};
