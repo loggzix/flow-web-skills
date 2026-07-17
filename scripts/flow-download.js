@@ -23,6 +23,9 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
     await page.waitForTimeout(4000);
   }
 
+  // Set large viewport to prevent virtualized grid unmounting
+  await page.setViewportSize({ width: 1920, height: 1080 }).catch(() => {});
+
   const videoFilter = page.locator('[role="tab"], button').filter({ hasText: /videocam|Xem video/ }).first();
   if (await videoFilter.count()) { try { await videoFilter.click({ timeout: 5000 }); await page.waitForTimeout(2000); } catch (_) {} }
 
