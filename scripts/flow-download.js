@@ -90,8 +90,16 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
 
   fs.mkdirSync(outDir, { recursive: true });
   const manifestPath = path.join(outDir, 'manifest.json');
-  // RESUME: clip da tai (theo editId trong ten file) → bo qua, khoi tai lai khi job bi cat giua chung.
-  const doneHex = new Set(fs.readdirSync(outDir).filter(f => /^video_\d+_[0-9a-f]{8}\.mp4$/.test(f)).map(f => f.split('_')[2].slice(0, 8)));
+  
+  // RESUME: Read manifest.json directly to check which UUIDs are already downloaded successfully
+  let doneHex = new Set();
+  if (fs.existsSync(manifestPath)) {
+    try {
+      const man = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+      doneHex = new Set(man.map(item => (item.editId || '').slice(0, 8)));
+    } catch (_) {}
+  }
+  
   const jobs = items.slice(0, MAX).map((it, i) => ({ ...it, n: i + 1 }))
     .filter(j => !doneHex.has((editIdOf(j) || '').slice(0, 8)));
   if (doneHex.size) console.log(`RESUME: bo qua ${doneHex.size} clip da co, tai ${jobs.length} clip con lai.`);
@@ -99,9 +107,9 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
   let fail = 0;
   // Ghi manifest TANG DAN: job bi terminal cat (~60s) van co manifest phan anh clip da tai + resume duoc.
   const flushManifest = () => {
-    const done = fs.readdirSync(outDir).filter(f => /^video_\d+_[0-9a-f]{8}\.mp4$/.test(f)).sort();
+    const done = fs.readdirSync(outDir).filter(f => f.endsWith('.mp4')).sort();
     const seen = new Map(results.map(r => [r.file, r]));
-    const man = done.map(f => seen.get(f) || { file: f, editId: f.split('_')[2].slice(0, 8), bytes: fs.statSync(path.join(outDir, f)).size });
+    const man = done.map(f => seen.get(f) || { file: f, editId: f.split('_')[2]?.slice(0, 8) || '', bytes: fs.statSync(path.join(outDir, f)).size });
     fs.writeFileSync(manifestPath, JSON.stringify(man, null, 2));
   };
   // Resolution config from env (default 1080p, supported: 720p, 1080p, 4k)
