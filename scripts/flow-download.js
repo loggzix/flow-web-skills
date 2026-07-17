@@ -149,7 +149,19 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
         const video = anchor.locator('video').first();
 
         if (!(await video.count())) {
-          console.log(`FAIL ${job.n}: No video element found for ${editId.slice(0, 8)} (DOM not ready or expired)`);
+          console.log(`FAIL ${job.n}: No video element found for ${editId.slice(0, 8)} (DOM not ready)`);
+          fail++;
+          continue;
+        }
+
+        // Wait for video src to be fully loaded (not empty or placeholder)
+        const srcReady = await lib.pollUntil(page, async () => {
+          const src = await video.getAttribute('src').catch(() => '');
+          return src && (src.startsWith('/fx/') || src.startsWith('blob:') || src.startsWith('http'));
+        }, 8000, 200);
+
+        if (!srcReady) {
+          console.log(`FAIL ${job.n}: Video src is not ready/loaded for ${editId.slice(0, 8)}`);
           fail++;
           continue;
         }
