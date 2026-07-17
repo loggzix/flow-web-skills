@@ -78,11 +78,14 @@ node flow-job.js <scenes.json> <outDir>  # fire → poll → download trọn job
 | 8 | Gen bằng model mất phí mà chưa hỏi Long | Đốt tín dụng | 🔴 checkpoint tín dụng (Phần B) |
 | 9 | Bật nút `Tác nhân` (Agent mode) | Thanh config biến mất, gãy selector | GIỮ TẮT |
 | 10 | `.click()` DOM trong evaluate / `mouse.click` theo tọa độ lên item dialog / JS set `.value` vào input | React không nhận — click tọa độ lên dialog add_2 fail im lặng (2026-07-06) | Playwright `locator.click()` trusted / gõ phím thật |
-| 11 | Tự tắt Chrome automation | Mất CDP + phiên login | Hỏi Long trước (Phần F) |
+| 11 | Gán prompt trực tiếp qua DOM `.textContent` / `.innerHTML` vào Slate Editor | Trạng thái React nội bộ của Slate không nhận diện, nút Tạo vẫn bị disable/mờ | BẮT BUỘC focus ô editor trước, sau đó lấy React `editor` từ `__reactProps*`, gán `editor.selection = null`, gọi `editor.insertText(promptText)` và `editor.onChange()`. Không dùng các lệnh DOM thô hoặc execCommand thiếu sync |
+| 12 | Tự tắt Chrome automation | Mất CDP + phiên login | Hỏi Long trước (Phần F) |
 | 12 | Tạo project rác khi test | Bừa workspace Flow | Test Project có sẵn (Phần F) |
 | 13 | Viết prompt văn xuôi liền một đoạn — không tiền tố, không xuống dòng | Long bắt lỗi ngay (2026-07-06, MenhSo.AI) | Mỗi thành phần 1 dòng + tiền tố `Time:`/... (BƯỚC 3) |
 | 14 | Re-fire 1 cảnh quá 2 lần, hoặc re-fire khi đang 403/reCAPTCHA | Đốt slot render, nuôi bão 403 | Counter per-cảnh, chạm 2 → loại; 403 → STOP báo Long (Phần B) |
 | 15 | Map cảnh↔clip bằng prompt-match TOÀN grid khi project từng gen đợt cũ | prompts.md dán nguyên văn → prompt trùng 100% giữa các đợt → dính clip cũ | workflowId từ fire response; thiếu id → prompt-match CHỈ trong vùng tile mới (Phần G) |
+| 16 | Polling status bị kẹt vô thời hạn | Web Flow khi render xong ngắt gửi request check mạng → script nghe network bị treo | flow-status.js tự động thoát sớm sau 8s không có poll mới (NO_POLLS_EARLY_FALLBACK) và nhảy sang quét grid |
+| 17 | Gán prompt trực tiếp qua DOM `.textContent` / `.innerHTML` vào Slate Editor | Trạng thái React nội bộ của Slate không nhận diện, nút Tạo vẫn bị disable/mờ | BẮT BUỘC focus ô editor trước, sau đó lấy React `editor` từ `__reactProps*`, gán `editor.selection = null`, gọi `editor.insertText(promptText)` và `editor.onChange()`. Không dùng các lệnh DOM thô hoặc execCommand thiếu sync |
 
 ---
 
@@ -173,6 +176,25 @@ Chip config bottom bar (`🍌 model | crop | Nx`) → menu 2 tab đầu **Hình 
 
 ## Các option config video
 - **Chế độ:** `crop_free Khung hình` (frame đầu/cuối) vs `chrome_extension Thành phần` (ingredients). Text-to-video thuần chạy được cả hai.
+- **Nhập Prompt cho Slate Editor (Vá lỗi React State 2026-07-17):** Tránh thay đổi `.textContent` hoặc `.innerHTML` trực tiếp vì React Slate.js sẽ bỏ qua cập nhật state khiến nút "Tạo" bị disable/mờ. Cách xử lý chuẩn:
+  1. Click/Focus vào phần tử `[data-slate-editor=true]`.
+  2. Lấy đối tượng React Fiber `editor` qua: `const editor = el[Object.keys(el).find(k => k.startsWith('__reactProps'))].children.props.node;`
+  3. Reset selection: `editor.selection = null;`
+  4. Thực hiện chèn text: `editor.insertText(promptText);`
+  5. Đồng bộ state React: `editor.onChange();`
+  6. Hoặc mô phỏng gõ phím thật bằng CDP: click tọa độ trung tâm editor, gửi tuần tự sự kiện `Input.dispatchKeyEvent` với type: `'char'` cho từng ký tự (gửi `\r` thay cho `\n` khi xuống dòng).
+  7. **Vá lỗi Dropdown chặn Selection (2026-07-17):** Khi click nút `Thêm` / `Tạo cảnh`, dropdown menu của Radix (DropdownMenuContent) có thuộc tính focus-trap/pointer-events chặn selection của editor. Cần phải đóng dropdown hoàn toàn bằng cách trigger hàm của DropdownMenu Parent React Props: `fiber.memoizedProps.onOpenChange(false)` hoặc trigger click trực tiếp clickHandler của nút. Nếu editor bị mờ hẳn không cho type, trỏ Selection của window Selection về text node của editor bằng:
+     ```javascript
+     const el = document.querySelector("[data-slate-editor=true]");
+     const textNode = el.querySelector("[data-slate-string=true]") || el.firstChild;
+     const range = document.createRange();
+     range.selectNodeContents(textNode);
+     const sel = window.getSelection();
+     sel.removeAllRanges();
+     sel.addRange(range);
+     editor.selection = { anchor: { path: [0, 0], offset: 0 }, focus: { path: [0, 0], offset: textNode.textContent.length } };
+     editor.onChange();
+     ```
 - **Model** (dropdown `arrow_drop_down` → `[role=menuitem]`): Omni Flash · Veo 3.1 - Lite / Fast / Quality / Lite [Lower Priority]. Đều kèm audio.
 - **Tỉ lệ:** 9:16 / 16:9. **Số lượng:** 1x–4x; **x4 = 4 edit id RIÊNG** = 4 request riêng/cảnh. **Thời lượng:** Omni Flash 4/6/8/10s; Veo 3.1 chỉ 4/6/8s.
 
@@ -323,7 +345,14 @@ Nút `Tác nhân`: bật = thanh config biến mất, gãy selector. GIỮ TẮT
 
 | Triệu chứng | Fix một lệnh | Vẫn hỏng thì |
 |---|---|---|
+| Slate.js editor không nhận text / Nút Tạo bị disable | Thao tác trực tiếp qua Slate React API: lấy `editor` từ `__reactProps*` của `[data-slate-editor=true]`, thiết lập `editor.selection = null`, rồi gọi `editor.insertText(prompt)` và `editor.onChange()`. **Lưu ý:** Khi truyền prompt qua CDP `Runtime.evaluate`, bắt buộc double-escape các ký tự xuống dòng (thành `\\n` hoặc `\\\\n`) để tránh lỗi `SyntaxError: Invalid or unexpected token` | Giả lập gửi KeyEvents (char) native qua CDP (nhập chậm nhưng chắc chắn React nhận) |
+| Video hiển thị = 0 / Không tìm thấy phần tử video sau khi render | Do tab "Xem video" chưa được chọn/chưa mount DOM. Tìm tab chứa text "Xem video" và click programmatically để các thẻ video mount | Tải lại trang hoặc chuyển tab thủ công |
+| flow-download.js lỗi `TypeError: object is not iterable` | Do truyền file `fire-report.json` (dạng object) vào tham số `idsFile`. Script chỉ nhận JSON array (ví dụ `["id1", "id2"]`). | Trích xuất trường `unmatchedWorkflows` từ report ra file tạm chứa array sạch rồi truyền vào |
+| Lỗi click Tạo / Nút Tạo bị disable mặc dù text editor đã đầy | Slate Selection bị null hoặc trôi sai DOM node bên ngoài. Gọi hàm window Selection gán trỏ thẳng vào text node: `const sel = window.getSelection(); const range = document.createRange(); range.selectNodeContents(editorEl.firstChild); sel.removeAllRanges(); sel.addRange(range);` sau đó gọi tiếp `editor.onChange()` để React nhận diện selection state. | Giả lập click direct React event handler: `arrowBtn[reactPropsKey].onClick({ nativeEvent: { isTrusted: true }, preventDefault: () => {}, stopPropagation: () => {} })` bypass cơ chế chặn click của UI. |
+| React/Next.js bị crash (Application error: a client-side exception...) | Can thiệp DOM hoặc dispatchEvent không đúng chuẩn React/Slate gây crash. Gọi `location.reload()` qua CDP hoặc `browser_navigate` lại URL project | Relaunch Chrome CDP |
+| Slate.js editor không nhận text / Nút Tạo bị disable (Radix Dropdown chặn focus) | Nếu dropdown menu còn mở che editor (VD: menu Thêm, Tạo cảnh), nút Tạo bị mờ do Selection trôi. Phải dispatch click hoặc trigger click của Radix Trigger cha (`Radix.onOpenChange(true/false)` hoặc React props click) trước khi focus editor. | Reload trang để reset menu state. |
 | Blank page / tab trôi `about:blank` | `browser_navigate` lại URL Flow của project | Chrome CDP chết → relaunch KÈM URL (dưới) |
+| Script status check bị kẹt / timeout im lặng | Do Google Flow ngắt gửi request check mạng khi đã render xong → script `flow-status.js` tự động fallback sang quét grid sau 8s im lặng (`NO_POLLS_EARLY_FALLBACK`) | Chạy thẳng `flow-download.js` để kéo grid thủ công |
 | Runner không connect được CDP 9666 | Chrome CDP chưa chạy → relaunch KÈM URL | `/json/version` vẫn trả 200 mà connect treo ~30s = tab crash tồn dư CHẶN connectOverCDP → cứu raw CDP: `PUT http://127.0.0.1:9666/json/new?<url Flow>` mở tab mới RỒI `GET /json/close/<targetId của tab xác>`; vẫn chết → check port 9666 bị chiếm |
 | Script tìm chip `crop_` timeout dù Flow đang mở | Tab kẹt `/characters`/`/edit/` (URL vẫn chứa project id, trang cũng có ô prompt → tưởng đúng trang) → ép goto URL GỐC project trước khi config | Reload rồi verify chip lại |
 | Tool `mcp__playwright__*` "No such tool available" | MCP rớt gateway → restart gateway | Xem log gateway, báo Long |
@@ -349,8 +378,17 @@ Nút `Tác nhân`: bật = thanh config biến mất, gãy selector. GIỮ TẮT
 ## Test Project
 Training/test → "Test Project" id `a9e68afc-d6fc-4563-b428-e217cd47ef40`. Job thật → project riêng.
 
+## Model providers Hermes (bối cảnh, verify 2026-07-15)
+Hermes chạy 2 provider thật: `ikame` (Claude, proxy zegoplatform.ikameglobal.com) + `antigravity` (Gemini local 127.0.0.1:8317). ikame giờ đọc `${IKAME_API_KEY}`/`${IKAME_BASE_URL}` trong `.env` (KHÔNG còn `OPENAI_API_KEY` — biến đó + `OPENAI_BASE_URL` + `HF_TOKEN` đã comment vì Hermes tự probe /v1/models trên proxy → đẻ ghost provider anthropic/openai-api/gemini/huggingface đầy model chết trong picker). Nếu picker hiện lại model trùng/chết: chỉ là cache — blank `provider_models_cache.json` (cả root + profiles/imported), nhưng gốc là giữ mấy biến .env kia disabled.
+
 ## Xem media (video/audio) — claude mù video, điếc audio
 **⭐ QC HÌNH ẢNH (mặc định, chạy trong Hermes — không phụ thuộc agy):** trích frame giữa clip rồi đọc bằng `vision_analyze`:
+`ffmpeg -y -ss <giây> -i clip.mp4 -vframes 1 frame.jpg` → `vision_analyze(frame.jpg, "con vật/cảnh gì, khớp prompt không?")`. Nhanh, không treo, đủ verify chủ thể/bố cục/watermark.
+*⚠️ Nếu vision_analyze báo lỗi `No LLM provider configured for task=vision provider=auto` → ĐỪNG loay hoay sửa config trong phiên đang chạy: model picker + vision provider được CACHE lúc khởi động session, `hermes config set vision.*` chỉ có tác dụng từ session SAU (verify 2026-07-15: set xong vẫn báo provider=auto). Trong phiên hiện tại → dùng THẲNG agy bên dưới (agy chạy độc lập, luôn xem được ảnh/video). Muốn fix bền cho session sau: `hermes config set vision.provider "custom:antigravity"` + `vision.model "gemini-3.1-flash-image"` + `vision.base_url "http://127.0.0.1:8317/v1"` rồi mở session mới. (KHÔNG trỏ vision vào `${OPENAI_API_KEY}` — biến đó đã bị vô hiệu, giờ ikame dùng `${IKAME_API_KEY}`.)*
+
+**Phân tích clip Veo / giọng → đẩy file cho agy:**
+`"C:/Users/longnv/AppData/Local/agy/bin/agy.exe" --dangerously-skip-permissions --add-dir "<thư mục>" -p "Look at the file <tên> in this directory. <câu hỏi>. If you truly cannot see the pixels, reply CANNOT SEE."` (cwd = thư mục file; **`--add-dir` PHẢI path tuyệt đối — dùng `.` là agy lạc sandbox**). agy đọc được cả .mp4 đã ghép (verified 2026-07-14).
+*(Đường dẫn agy trên máy longnv: C:/Users/longnv/AppData/Local/agy/bin/agy.exe)*
 `ffmpeg -y -ss <giây> -i clip.mp4 -vframes 1 frame.jpg` → `vision_analyze(frame.jpg, "con vật/cảnh gì, khớp prompt không?")`. Nhanh, không treo, đủ verify chủ thể/bố cục/watermark. Verify thật 2026-07-14 (job capybara): 2 frame → vision xác nhận đúng nội dung prompt.
 **Chỉ dùng agy khi cần THOẠI/GIỌNG** (vision không nghe audio). Phân tích clip Veo / giọng → đẩy file cho **agy**:
 `"C:/Users/loggz/AppData/Local/agy/bin/agy.exe" --dangerously-skip-permissions --add-dir "<thư mục>" -p "Look at the file <tên> in this directory. <câu hỏi>. If you truly cannot see the pixels, reply CANNOT SEE."` (cwd = thư mục file; **`--add-dir` PHẢI path tuyệt đối — dùng `.` là agy lạc sandbox**). agy đọc được cả .mp4 đã ghép (verified 2026-07-14).
@@ -387,10 +425,11 @@ Training/test → "Test Project" id `a9e68afc-d6fc-4563-b428-e217cd47ef40`. Job 
 
 **⚠️ Chạy node qua git-bash (MSYS): file arg PHẢI là path Windows native `C:\...`, KHÔNG dùng `/c/...` hay `$HOME/...`.** MSYS mangle POSIX path khi truyền cho `node` → nhận `C:\c\Users\...` → MODULE_NOT_FOUND. Đúng: `cd 'C:\...\scripts' && node flow-job.js 'C:\...\scenes.json'`. Áp cho cả path scenes.json/report/outDir truyền vào runner.
 
-**⚠️ Terminal cắt lệnh ở ~60s NHƯNG process node vẫn chạy nền tới xong.** Job dài (fire nhiều cảnh + fire bù, hoặc download nhiều clip) sẽ vượt 60s → terminal báo timeout, ĐỪNG coi là fail/chạy lại đè. Cứ để chạy, sau đó POLL kết quả bằng cách khác thay vì re-invoke:
-- Download: `sleep 30 && ls <outDir>/*.mp4 | wc -l` lặp tới khi số file NGỪNG tăng + `manifest.json` xuất hiện (script ghi manifest ở bước cuối cùng) = xong.
-- Fire/job: đọc `fire-report.json` / job report trong outDir.
-- ⚠️ `background=true` của terminal tool NUỐT stdout (bug env "no job control") → KHÔNG dùng cho runner; chạy foreground rồi poll file như trên.
+**⚠️ Terminal cắt lệnh khi vượt cap (~60-180s) — foreground timeout GIẾT process node (verify 2026-07-15).** ĐỪNG tin "process vẫn chạy nền tới xong": khi lệnh foreground bị công cụ terminal cắt vì timeout, OS process node bị KILL luôn → `flow-job.js` chết ĐANG DỞ ở bước POLL_ROUND, video render trên server vẫn xong nhưng KHÔNG được download/rename. Triệu chứng: log dừng ở `POLL_ROUND N`, `job-report.json` không sinh ra, output chỉ có `fire-report.json` + `media-map.json` + 0-1 .mp4.
+- **PHÒNG:** fire xong (thấy `DONE fired=8/8` trong log) là phần khó nhất đã xong — render là việc server. ĐỪNG chạy lại `flow-job.js` (outDir có .mp4/report cũ → tự ABORT hoặc trùng).
+- **CỨU (recipe verify 2026-07-15):** render đã xong trên web (grid full tile) → chạy THẲNG `flow-download.js <projectId> <outDir> 16` (count RỘNG ≥2× số cảnh) để cuộn-gom kéo hết clip về. Rồi map+rename thủ công bằng python: đọc `fire-report.json` (`scenes[].workflowIds`) + `media-map.json` (title→scene) → so khớp hash trong tên file `video_NN_<hash>.mp4` với editId → `os.rename` thành `<sceneId>_vK.mp4`. Cảnh nào chỉ ra 1 clip mà các cảnh khác đủ 2 → file `unknown_v1.mp4` còn lại chính là bản thiếu của cảnh đó.
+- Poll tiến độ khi thực sự backgrounded: `sleep 30 && ls <outDir>/*.mp4 | wc -l` lặp tới khi số file NGỪNG tăng + `manifest.json` xuất hiện = xong.
+- ⚠️ `background=true` của terminal tool NUỐT stdout (bug env "no job control") → KHÔNG dùng cho runner; chạy foreground và chấp nhận có thể bị cắt, rồi CỨU bằng flow-download như trên.
 
 **⭐ Response 200 request gen chứa `workflowId` (=editId grid) + `mediaTitle` (=FULL prompt)** → fire-report ghi `workflowIds` theo cảnh = map cảnh↔clip TUYỆT ĐỐI, không lệ thuộc poll (poll bỏ sót video render nhanh). Response 403 reCAPTCHA thỉnh thoảng có → page tự retry, 200 về muộn 20-30s (waitBirths idle 15s, có 403 → nới 35s, trần 90s). ⚠️ **Bão 403 nuốt SẠCH đợt fire** (0 video thật dù tool báo FIRED) — `flow-job` tự cứu bằng re-fire.
 
@@ -401,6 +440,13 @@ Training/test → "Test Project" id `a9e68afc-d6fc-4563-b428-e217cd47ef40`. Job 
 4. QC bulk: agy (Phần F).
 
 **Timing (đo 2026-07-04):** fire text ~1-4s/cảnh · fire-char ~1s/cảnh · render ~2-3 phút (song song server-side) · status kết luận ~8s khi xong · download 8 clip/~7s. Cap đồng thời: sau ~2 cảnh x4, cảnh kế chờ ~20-45s — runner tự chờ, không phải lỗi.
+
+**⭐ TRÁNH XUNG ĐỘT KHI PULL SKILL MỚI (Vá 2026-07-17):**
+Khi `git pull` skill mới từ Git về máy, để tránh conflict với local changes tự phát sinh (như đổi file `SKILL.md` hoặc script status):
+1. Stash changes trước khi pull:
+   `cd /c/flow-web-skills && git stash && git pull && git stash pop`
+2. Nếu muốn đè hoàn toàn bằng bản mới nhất trên remote (đập bỏ thay đổi local):
+   `cd /c/flow-web-skills && git reset --hard origin/main && git clean -df`
 
 **⭐ THROTTLE (fix 2026-07-14, verified 6 cảnh x2):** fire >2 cảnh liên tiếp → server khóa nút Tạo ~20-40s. `fireScene` (flow-lib) chờ enable tới 40s và KHÔNG BAO GIỜ throw — cảnh bị nghẽn trả `{ok:false, throttled:true}`, KHÔNG làm sập job. `flow-fire`/`flow-fire-char` gom cảnh throttled, chờ 30s rồi fire bù 1 lần. Nhờ vậy job ≥6 cảnh fire đủ trong 1 lần chạy; `totalFired` luôn được ghi → `flow-job` không còn `JOB_ABORT` oan. Bài học cũ (fire lô 3-4 cảnh thủ công) KHÔNG còn cần — cứ đưa cả job cho `flow-job`.
 

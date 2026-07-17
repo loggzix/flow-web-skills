@@ -4,6 +4,7 @@
   "private": true,
   "description": "CDP runner scripts for Google Flow (Veo) video generation. Connects to Chrome on CDP port 9666.",
   "dependencies": {
-    "playwright-core": "^1.48.0"
+    "playwright-core": "^1.48.0",
+    "ws": "^8.21.1"
   }
 }

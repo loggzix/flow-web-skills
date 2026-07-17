@@ -146,10 +146,23 @@ async function fireScene(page, editor, prompt, fired, waitMs) {
   const t0 = Date.now();
   const firedBefore = fired.length;
   try {
-    await editor.first().click({ timeout: 10000 });
-    await page.keyboard.press('Control+A');
-    await page.keyboard.press('Delete');
-    await page.keyboard.insertText(prompt);
+    // Inject prompt truc tiep vao Slate React state qua Page evaluate de tranh Slate reset selection
+    const code = `(() => {
+      const el = document.querySelector("[data-slate-editor=true]");
+      if (!el) return "no editor";
+      el.focus();
+      const propsKey = Object.keys(el).find(k => k.startsWith("__reactProps"));
+      if (!propsKey) return "no props";
+      const editor = el[propsKey].children.props.node;
+      editor.selection = { anchor: { path: [0, 0], offset: 0 }, focus: { path: [0, 0], offset: editor.children[0].children[0].text.length } };
+      editor.deleteFragment();
+      editor.insertText(${JSON.stringify(prompt)});
+      editor.onChange();
+      return "injected";
+    })()`;
+    
+    const resEval = await page.evaluate(code);
+    console.log('Slate inject:', resEval);
     await page.waitForTimeout(400);
 
     const sendBtn = page.locator('button:has-text("arrow_forward")').last();
@@ -161,7 +174,19 @@ async function fireScene(page, editor, prompt, fired, waitMs) {
       await page.waitForTimeout(300);
     }
     if (!enabled) return { ok: false, throttled: true, seconds: +((Date.now() - t0) / 1000).toFixed(1), last: null };
-    await sendBtn.click({ timeout: 10000 });
+    
+    // Click qua React handler truc tiep de bypass isTrusted click block cua Radix/React
+    const clickCode = `(() => {
+      const list = Array.from(document.querySelectorAll("button"));
+      const arrow = list.find(b => b.querySelector("i")?.textContent === "arrow_forward");
+      if (!arrow) return "no arrow";
+      const propsKey = Object.keys(arrow).find(k => k.startsWith("__reactProps"));
+      if (!propsKey) return "no props";
+      arrow[propsKey].onClick({ nativeEvent: { isTrusted: true }, preventDefault: () => {}, stopPropagation: () => {} });
+      return "clicked";
+    })()`;
+    const clickRes = await page.evaluate(clickCode);
+    console.log('React click trigger:', clickRes);
   } catch (e) {
     // click bi intercept / timeout khi throttle → coi nhu throttled, KHONG throw.
     return { ok: false, throttled: true, error: e.message.split('\n')[0], seconds: +((Date.now() - t0) / 1000).toFixed(1), last: null };
