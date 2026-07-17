@@ -176,9 +176,16 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
           continue;
         }
 
-        // Right-click target media via Playwright native click with force:true (bypasses hit-test button wrappers)
+        // Right-click target media via dispatchEvent at the center coordinates (matches extension contextmenu dispatch)
         await media.scrollIntoViewIfNeeded({ timeout: 8000 }).catch(() => {});
-        await media.click({ button: 'right', timeout: 8000, force: true });
+        await media.evaluate(el => {
+          const rect = el.getBoundingClientRect();
+          const cx = rect.left + rect.width / 2;
+          const cy = rect.top + rect.height / 2;
+          el.dispatchEvent(new MouseEvent('contextmenu', {
+            bubbles: true, cancelable: true, clientX: cx, clientY: cy, button: 2
+          }));
+        });
         
         // Wait for Radix context menu to appear
         const menu = page.locator('[role="menu"]').first();
