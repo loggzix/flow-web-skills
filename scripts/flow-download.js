@@ -131,32 +131,25 @@ const editIdOf = it => it.edit ? it.edit.split('/edit/')[1].split(/[/?#]/)[0] : 
       const file = path.join(outDir, `video_${String(job.n).padStart(2, '0')}_${editId.slice(0, 8)}.mp4`);
       
       try {
-        // Find the anchor link first (always present in virtual list metadata) and scroll it into view
-        const anchor = page.locator(`a[href*="/edit/${editId}"]`);
+        // Find the anchor link first (always present in virtual list metadata)
+        let anchor = page.locator(`a[href*="/edit/${editId}"]`);
+        
+        // Wait up to 5 seconds for Flow UI to mount the new video DOM element if not found immediately
+        if (!(await anchor.count())) {
+          console.log(`[DL] Waiting 5s for tile ${editId.slice(0, 8)} to render in DOM...`);
+          await page.waitForTimeout(5000);
+        }
+
         if (await anchor.count()) {
           await anchor.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => {});
-          await page.waitForTimeout(300);
+          await page.waitForTimeout(200);
         }
 
-        // Find the video element directly inside the edit link (much safer and faster)
+        // Find the video element directly inside the edit link
         const video = anchor.locator('video').first();
-        
-        if (!(await video.count())) {
-          console.log(`[DL] Tile ${editId.slice(0, 8)} video not in view, scrolling to find...`);
-          // Scroll container down step-by-step to trigger virtual list loading
-          for (let s = 0; s < 12; s++) {
-            await page.evaluate(() => {
-              const scs = [...document.querySelectorAll('*')].filter(e => e.scrollHeight > e.clientHeight + 100 && e.clientHeight > 200);
-              const sc = scs.sort((a, b) => b.scrollHeight - a.scrollHeight)[0];
-              if (sc) sc.scrollTop += 500;
-            });
-            await page.waitForTimeout(400);
-            if (await video.count()) break;
-          }
-        }
 
         if (!(await video.count())) {
-          console.log(`FAIL ${job.n}: No video element found for ${editId.slice(0, 8)} (even after scrolling)`);
+          console.log(`FAIL ${job.n}: No video element found for ${editId.slice(0, 8)} (DOM not ready or expired)`);
           fail++;
           continue;
         }
